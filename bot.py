@@ -109,7 +109,7 @@ def get_rate_from_web():
         if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
             sell_rate = int(sell_match.group(2))
-            print(f"✅ Найден курс (вариант 1): покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
@@ -118,14 +118,14 @@ def get_rate_from_web():
         if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
             sell_rate = int(sell_match.group(1))
-            print(f"✅ Найден курс (вариант 2): покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         numbers = re.findall(r'\b([5-7][0-9]{4})\b', html)
         if len(numbers) >= 2:
             buy_rate = int(numbers[0])
             sell_rate = int(numbers[1])
-            print(f"✅ Найден курс (вариант 3): покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         lines = html.split('\n')
@@ -145,7 +145,7 @@ def get_rate_from_web():
                     print(f"   Найдена продажа: {sell_rate}")
         
         if buy_rate and sell_rate:
-            print(f"✅ Найден курс (вариант 4): покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         print("⚠️ Курс не найден на странице")
@@ -224,41 +224,40 @@ def main():
                         f"\n"
                         f"📊 Проверок: {update_count}\n"
                         f"🟢 Покупка: {buy_rate} => 100 оск.\n"
-                        f"🔴 Продажа: 100 => {sell_rate} оск.\n"
-                        f"\n"
-                        f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                        f"🔴 Продажа: 100 => {sell_rate} оск."
                     )
                     send_vk_message(alive_message)
                     last_alive_time = current_time
                     print(f"💚 Отправлено сообщение о жизни бота")
 
-                # --- ПРОВЕРКА УСЛОВИЙ (ОТПРАВКА ТОЛЬКО ЕСЛИ ВЫГОДНО) ---
-                if check_conditions(buy_rate, sell_rate):
+                # --- ПРОВЕРКА УСЛОВИЙ ---
+                conditions_met = check_conditions(buy_rate, sell_rate)
+                print(f"📋 Условия: Покупка {buy_rate} < {BUY_THRESHOLD} = {buy_rate < BUY_THRESHOLD}, Продажа {sell_rate} > {SELL_THRESHOLD} = {sell_rate > SELL_THRESHOLD}")
+                print(f"📋 Результат: {'✅ ВЫПОЛНЕНЫ' if conditions_met else '❌ НЕ ВЫПОЛНЕНЫ'}")
+                
+                if conditions_met:
                     notification_count += 1
                     print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
-                    print(f"   Покупка {buy_rate} < {BUY_THRESHOLD}: {buy_rate < BUY_THRESHOLD}")
-                    print(f"   Продажа {sell_rate} > {SELL_THRESHOLD}: {sell_rate > SELL_THRESHOLD}")
 
                     current_interval = get_notification_interval(notification_count)
                     current_time = time.time()
 
-                    # Проверяем, прошло ли достаточно времени с последней отправки
                     if current_time - last_notification_time >= current_interval:
                         message = (
                             f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
                             f"\n"
                             f"🟢 Покупка: {buy_rate} => 100 оск.\n"
-                            f"🔴 Продажа: 100 => {sell_rate} оск.\n"
-                            f"\n"
-                            f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                            f"🔴 Продажа: 100 => {sell_rate} оск."
                         )
 
                         send_vk_message(message)
                         last_notification_time = current_time
                         print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
+                    else:
+                        wait_time = int(current_interval - (current_time - last_notification_time))
+                        print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
                 else:
-                    print(f"⏳ Условия не выполнены (сообщение НЕ отправлено):")
-                    print(f"   Покупка {buy_rate} >= {BUY_THRESHOLD} или Продажа {sell_rate} <= {SELL_THRESHOLD}")
+                    print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
             else:
                 print("❌ Не удалось получить курс")
 
