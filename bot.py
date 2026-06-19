@@ -2,6 +2,8 @@ import time
 import re
 import random
 import requests
+import os
+import pickle
 from datetime import datetime
 import vk_api
 from vk_api.utils import get_random_id
@@ -24,6 +26,8 @@ APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9Zg
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 13
 
+STATE_FILE = "bot_state.pkl"
+
 print("📌 Настройки загружены")
 
 # --- ИНИЦИАЛИЗАЦИЯ VK ---
@@ -38,7 +42,26 @@ except Exception as e:
 update_count = 0
 notification_count = 0
 last_alive_time = time.time()
-first_start = True
+
+
+def load_state():
+    """Загружает состояние из файла"""
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, "rb") as f:
+                return pickle.load(f)
+        return {"first_start_done": False, "alive_count": 0}
+    except:
+        return {"first_start_done": False, "alive_count": 0}
+
+
+def save_state(state):
+    """Сохраняет состояние в файл"""
+    try:
+        with open(STATE_FILE, "wb") as f:
+            pickle.dump(state, f)
+    except:
+        pass
 
 
 def send_vk_message(text):
@@ -173,7 +196,7 @@ def get_random_delay():
 
 
 def main():
-    global update_count, notification_count, last_alive_time, first_start
+    global update_count, notification_count, last_alive_time
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
@@ -191,20 +214,24 @@ def main():
 
     last_notification_time = 0
 
-    # --- ПЕРВОЕ СООБЩЕНИЕ ПРИ ЗАПУСКЕ ---
-    if first_start:
+    # --- ЗАГРУЖАЕМ СОСТОЯНИЕ ---
+    state = load_state()
+    first_start_done = state.get("first_start_done", False)
+    alive_count = state.get("alive_count", 0)
+
+    # --- ПЕРВОЕ СООБЩЕНИЕ ПРИ ЗАПУСКЕ (ТОЛЬКО ОДИН РАЗ) ---
+    if not first_start_done:
         start_message = (
             f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ!\n"
             f"\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
-            f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
-            f"\n"
-            f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+            f"🔴 Продажа: выше {SELL_THRESHOLD}"
         )
         send_vk_message(start_message)
-        first_start = False
-        print("💚 Отправлено сообщение о запуске бота")
+        state["first_start_done"] = True
+        save_state(state)
+        print("💚 Отправлено сообщение о запуске бота (первый и единственный раз)")
 
     while True:
         try:
@@ -219,6 +246,11 @@ def main():
                 # --- ПРОВЕРКА "ЖИВ ЛИ БОТ" КАЖДЫЙ ЧАС ---
                 current_time = time.time()
                 if current_time - last_alive_time >= 3600:
+                    alive_count += 1
+                    state = load_state()
+                    state["alive_count"] = alive_count
+                    save_state(state)
+                    
                     alive_message = (
                         f"✅ Бот жив и работает!\n"
                         f"\n"
@@ -228,7 +260,7 @@ def main():
                     )
                     send_vk_message(alive_message)
                     last_alive_time = current_time
-                    print(f"💚 Отправлено сообщение о жизни бота")
+                    print(f"💚 Отправлено сообщение о жизни бота (#{alive_count})")
 
                 # --- ПРОВЕРКА УСЛОВИЙ ---
                 conditions_met = check_conditions(buy_rate, sell_rate)
