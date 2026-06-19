@@ -37,6 +37,8 @@ except Exception as e:
 
 update_count = 0
 notification_count = 0
+last_alive_time = time.time()
+first_start = True  # Флаг для первого запуска
 
 
 def send_vk_message(text):
@@ -101,10 +103,6 @@ def get_rate_from_web():
         print(f"📄 HTML получен, длина: {len(html)}")
         
         # --- ИЩЕМ КУРС ---
-        # Пробуем найти числа в формате "Покупка: 58857 => 100"
-        # И "Продажа: 100 => 48156"
-        
-        # Вариант 1: Ищем по тексту с эмодзи
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
         
@@ -114,7 +112,6 @@ def get_rate_from_web():
             print(f"✅ Найден курс (вариант 1): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Вариант 2: Ищем просто числа рядом с ключевыми словами
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
         
@@ -124,8 +121,6 @@ def get_rate_from_web():
             print(f"✅ Найден курс (вариант 2): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Вариант 3: Ищем все числа на странице и берём подходящие
-        # Ищем числа от 10000 до 99999
         numbers = re.findall(r'\b([5-7][0-9]{4})\b', html)
         if len(numbers) >= 2:
             buy_rate = int(numbers[0])
@@ -133,7 +128,6 @@ def get_rate_from_web():
             print(f"✅ Найден курс (вариант 3): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Вариант 4: Поиск по строкам
         lines = html.split('\n')
         buy_rate = None
         sell_rate = None
@@ -163,14 +157,8 @@ def get_rate_from_web():
 
 
 def check_conditions(buy_rate, sell_rate):
+    """Проверяет условия (остаётся в коде, но не показывается пользователю)"""
     return buy_rate < BUY_THRESHOLD or sell_rate > SELL_THRESHOLD
-
-
-def get_condition_text(buy_rate, sell_rate):
-    conditions = []
-    conditions.append(f"{'✅' if buy_rate < BUY_THRESHOLD else '❌'} Покупка {buy_rate} {'<' if buy_rate < BUY_THRESHOLD else '>='} {BUY_THRESHOLD}")
-    conditions.append(f"{'✅' if sell_rate > SELL_THRESHOLD else '❌'} Продажа {sell_rate} {'>' if sell_rate > SELL_THRESHOLD else '<='} {SELL_THRESHOLD}")
-    return "\n".join(conditions)
 
 
 def get_notification_interval(notification_count):
@@ -182,7 +170,7 @@ def get_random_delay():
 
 
 def main():
-    global update_count, notification_count
+    global update_count, notification_count, last_alive_time, first_start
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
@@ -195,8 +183,25 @@ def main():
     print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
     print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
     print("=" * 60)
+    print("💚 Сообщение 'Бот жив' будет приходить раз в час")
+    print("=" * 60)
 
     last_notification_time = 0
+
+    # --- ПЕРВОЕ СООБЩЕНИЕ ПРИ ЗАПУСКЕ ---
+    if first_start:
+        start_message = (
+            f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ!\n"
+            f"\n"
+            f"📊 Отслеживание курса осколков\n"
+            f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
+            f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
+            f"\n"
+            f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+        )
+        send_vk_message(start_message)
+        first_start = False
+        print("💚 Отправлено сообщение о запуске бота")
 
     while True:
         try:
@@ -208,24 +213,37 @@ def main():
                 update_count += 1
                 print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
 
+                # --- ПРОВЕРКА "ЖИВ ЛИ БОТ" КАЖДЫЙ ЧАС ---
+                current_time = time.time()
+                if current_time - last_alive_time >= 3600:
+                    alive_message = (
+                        f"✅ Бот жив и работает!\n"
+                        f"\n"
+                        f"📊 Проверок: {update_count}\n"
+                        f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                        f"🔴 Продажа: 100 => {sell_rate} оск.\n"
+                        f"\n"
+                        f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                    )
+                    send_vk_message(alive_message)
+                    last_alive_time = current_time
+                    print(f"💚 Отправлено сообщение о жизни бота")
+
+                # --- ПРОВЕРКА УСЛОВИЙ ---
                 if check_conditions(buy_rate, sell_rate):
                     notification_count += 1
                     print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
-                    print(f"   {get_condition_text(buy_rate, sell_rate)}")
 
                     current_interval = get_notification_interval(notification_count)
                     current_time = time.time()
 
                     if current_time - last_notification_time >= current_interval:
+                        # --- ОТПРАВКА СООБЩЕНИЯ БЕЗ УСЛОВИЙ ---
                         message = (
                             f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
                             f"\n"
                             f"🟢 Покупка: {buy_rate} => 100 оск.\n"
                             f"🔴 Продажа: 100 => {sell_rate} оск.\n"
-                            f"\n"
-                            f"📊 УСЛОВИЯ:\n"
-                            f"   {'✅' if buy_rate < BUY_THRESHOLD else '❌'} Покупка {buy_rate} {'<' if buy_rate < BUY_THRESHOLD else '>='} {BUY_THRESHOLD}\n"
-                            f"   {'✅' if sell_rate > SELL_THRESHOLD else '❌'} Продажа {sell_rate} {'>' if sell_rate > SELL_THRESHOLD else '<='} {SELL_THRESHOLD}\n"
                             f"\n"
                             f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                         )
@@ -235,7 +253,7 @@ def main():
                         print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
                 else:
                     print(f"⏳ Условия не выполнены:")
-                    print(f"   {get_condition_text(buy_rate, sell_rate)}")
+                    print(f"   Покупка {buy_rate} >= {BUY_THRESHOLD} или Продажа {sell_rate} <= {SELL_THRESHOLD}")
             else:
                 print("❌ Не удалось получить курс")
 
