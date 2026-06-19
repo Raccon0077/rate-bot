@@ -18,7 +18,7 @@ USER_IDS = [
     145156004,
 ]
 
-BUY_THRESHOLD = 70000
+BUY_THRESHOLD = 50000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
@@ -82,7 +82,7 @@ def send_vk_message(text):
 
 
 def get_rate_from_web():
-    """Получает курс через HTTP-запрос"""
+    """Получает курс через HTTP-запрос с имитацией кнопок"""
     try:
         print("🌐 Начинаем запрос...")
         headers = {
@@ -113,8 +113,8 @@ def get_rate_from_web():
         
         print(f"📄 HTML получен, длина: {len(html)}")
         
-        # --- ПАРСИМ КУРС ИЗ HTML ---
-        # Ищем "Покупка: 🌕66240 => 💎100"
+        # --- ПАРСИМ КУРС ---
+        # Ищем "Покупка: 🌕59873 => 💎100"
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
         sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
         
@@ -124,11 +124,11 @@ def get_rate_from_web():
             print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Способ 2: Ищем по div с текстом
-        div_match = re.search(r'Текущий курс осколков:.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-        if div_match:
-            buy_rate = int(div_match.group(1))
-            sell_rate = int(div_match.group(2))
+        # Способ 2: Ищем в блоке program_chat
+        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+        if chat_match:
+            buy_rate = int(chat_match.group(1))
+            sell_rate = int(chat_match.group(2))
             print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
