@@ -44,7 +44,6 @@ update_count = 0
 notification_count = 0
 last_alive_time = time.time()
 
-
 def load_state():
     try:
         if os.path.exists(STATE_FILE):
