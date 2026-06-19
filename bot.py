@@ -48,7 +48,6 @@ except Exception as e:
 update_count = 0
 notification_count = 0
 last_alive_time = time.time()
-first_start = True
 
 
 def load_state():
@@ -89,7 +88,7 @@ def send_vk_message(text):
 
 
 def get_driver():
-    """Создаёт драйвер Chrome с headless-настройками"""
+    """Создаёт драйвер Chrome с headless-настройками для сервера"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -100,8 +99,14 @@ def get_driver():
     options.add_experimental_option("useAutomationExtension", False)
     options.add_argument("--window-size=1920,1080")
     
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        print("✅ Драйвер создан")
+        return driver
+    except Exception as e:
+        print(f"❌ Ошибка создания драйвера: {e}")
+        raise
 
 
 def get_rate_from_web():
@@ -119,17 +124,19 @@ def get_rate_from_web():
         try:
             learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
             learn_btn.click()
+            print("   ✅ Нажата кнопка 'Узнать курс'")
             time.sleep(2)
-        except:
-            print("   ⚠️ Кнопка 'Узнать курс' не найдена")
+        except Exception as e:
+            print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
         
         print("🔄 Нажимаем 'Обновить курс'...")
         try:
             update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
             update_btn.click()
+            print("   ✅ Нажата кнопка 'Обновить курс'")
             time.sleep(2)
-        except:
-            print("   ⚠️ Кнопка 'Обновить курс' не найдена")
+        except Exception as e:
+            print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
         
         print("📥 Получаем HTML...")
         html = driver.page_source
@@ -146,6 +153,7 @@ def get_rate_from_web():
             print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
+        # Способ 2: Ищем в блоке program_chat
         chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
         if chat_match:
             buy_rate = int(chat_match.group(1))
@@ -157,12 +165,15 @@ def get_rate_from_web():
         return None, None
         
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"❌ Ошибка получения курса: {e}")
         return None, None
     finally:
         if driver:
-            driver.quit()
-            print("✅ Браузер закрыт")
+            try:
+                driver.quit()
+                print("✅ Браузер закрыт")
+            except:
+                pass
 
 
 def check_conditions(buy_rate, sell_rate):
@@ -180,7 +191,7 @@ def get_random_delay():
 
 
 def main():
-    global update_count, notification_count, last_alive_time, first_start
+    global update_count, notification_count, last_alive_time
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
