@@ -98,25 +98,60 @@ def get_rate_from_web():
         
         html = response.text
         
-        print("📄 HTML получен, длина:", len(html))
+        print(f"📄 HTML получен, длина: {len(html)}")
         
-        # Сохраняем HTML для отладки
-        with open("debug.html", "w", encoding="utf-8") as f:
-            f.write(html)
-        print("📄 Сохранён debug.html")
+        # --- ИЩЕМ КУРС ---
+        # Пробуем найти числа в формате "Покупка: 58857 => 100"
+        # И "Продажа: 100 => 48156"
         
-        # Убираем эмодзи и лишние пробелы
-        clean_html = re.sub(r'[🟢🔴💎🌕]', '', html)
-        clean_html = re.sub(r'\s+', ' ', clean_html)
-        
-        # Ищем курс
-        buy_match = re.search(r'Покупка:\s*([0-9]+)\s*=>\s*([0-9]+)', clean_html)
-        sell_match = re.search(r'Продажа:\s*([0-9]+)\s*=>\s*([0-9]+)', clean_html)
+        # Вариант 1: Ищем по тексту с эмодзи
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
+        sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
         
         if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
             sell_rate = int(sell_match.group(2))
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс (вариант 1): покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        
+        # Вариант 2: Ищем просто числа рядом с ключевыми словами
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+        sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
+        
+        if buy_match and sell_match:
+            buy_rate = int(buy_match.group(1))
+            sell_rate = int(sell_match.group(1))
+            print(f"✅ Найден курс (вариант 2): покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        
+        # Вариант 3: Ищем все числа на странице и берём подходящие
+        # Ищем числа от 10000 до 99999
+        numbers = re.findall(r'\b([5-7][0-9]{4})\b', html)
+        if len(numbers) >= 2:
+            buy_rate = int(numbers[0])
+            sell_rate = int(numbers[1])
+            print(f"✅ Найден курс (вариант 3): покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        
+        # Вариант 4: Поиск по строкам
+        lines = html.split('\n')
+        buy_rate = None
+        sell_rate = None
+        
+        for line in lines:
+            if 'Покупка' in line:
+                nums = re.findall(r'\b([0-9]+)\b', line)
+                if nums:
+                    buy_rate = int(nums[0])
+                    print(f"   Найдена покупка: {buy_rate}")
+            if 'Продажа' in line:
+                nums = re.findall(r'\b([0-9]+)\b', line)
+                if len(nums) >= 2:
+                    sell_rate = int(nums[1])
+                    print(f"   Найдена продажа: {sell_rate}")
+        
+        if buy_rate and sell_rate:
+            print(f"✅ Найден курс (вариант 4): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         print("⚠️ Курс не найден на странице")
