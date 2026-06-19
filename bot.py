@@ -1,4 +1,5 @@
 import asyncio
+import time
 import re
 import random
 import pickle
@@ -18,7 +19,7 @@ USER_IDS = [
     145156004,
 ]
 
-BUY_THRESHOLD = 70000
+BUY_THRESHOLD = 50000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
@@ -87,7 +88,6 @@ async def get_rate_from_web_async():
         print("🌐 Запускаем браузер...")
         
         async with async_playwright() as p:
-            # Запускаем браузер в headless-режиме
             browser = await p.chromium.launch(
                 headless=True,
                 args=[
@@ -101,7 +101,6 @@ async def get_rate_from_web_async():
             print("🌐 Открываем страницу...")
             page = await browser.new_page()
             
-            # Переходим на страницу
             await page.goto(APP_URL, timeout=30000)
             await page.wait_for_load_state("networkidle")
             
@@ -127,7 +126,6 @@ async def get_rate_from_web_async():
             print(f"📄 HTML получен, длина: {len(html)}")
             
             # --- ПАРСИМ КУРС ---
-            # Ищем "Покупка: 🌕59873 => 💎100"
             buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
             sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
             
@@ -137,7 +135,6 @@ async def get_rate_from_web_async():
                 print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
                 return buy_rate, sell_rate
             
-            # Способ 2: Ищем в блоке program_chat
             chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
             if chat_match:
                 buy_rate = int(chat_match.group(1))
