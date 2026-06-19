@@ -62,55 +62,27 @@ def get_rate_from_web():
         # 1. Переходим на страницу
         print("🌐 Переходим на страницу...")
         session.get(APP_URL, headers=headers)
+        time.sleep(1)
         
         # 2. НАЖИМАЕМ КНОПКУ "Узнать курс"
         print("🔄 Нажимаем 'Узнать курс'...")
-        learn_url = "https://well2.activeusers.ru/app.php"  # Основной URL
         learn_data = {
             'act': 'item',
             'id': '14069',
-            'sign': 'fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo',
-            'vk_access_token_settings': '',
-            'vk_app_id': '6987489',
-            'vk_are_notifications_enabled': '0',
-            'vk_group_id': '182985865',
-            'vk_is_app_user': '1',
-            'vk_is_favorite': '0',
-            'vk_language': 'ru',
-            'vk_platform': 'desktop_web',
-            'vk_ref': 'other',
-            'vk_ts': '1781869457',
-            'vk_user_id': '212887447',
-            'vk_viewer_group_role': 'member',
-            'back': 'act:user',
-            'action': 'learn'  # Добавляем параметр для "Узнать курс"
+            'action': 'learn'
         }
-        session.post(learn_url, data=learn_data, headers=headers)
-        time.sleep(1)  # Ждём выполнения
+        session.post(APP_URL, data=learn_data, headers=headers)
+        time.sleep(1)
         
         # 3. НАЖИМАЕМ КНОПКУ "Обновить курс"
         print("🔄 Нажимаем 'Обновить курс'...")
         update_data = {
             'act': 'item',
             'id': '14069',
-            'sign': 'fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo',
-            'vk_access_token_settings': '',
-            'vk_app_id': '6987489',
-            'vk_are_notifications_enabled': '0',
-            'vk_group_id': '182985865',
-            'vk_is_app_user': '1',
-            'vk_is_favorite': '0',
-            'vk_language': 'ru',
-            'vk_platform': 'desktop_web',
-            'vk_ref': 'other',
-            'vk_ts': '1781869457',
-            'vk_user_id': '212887447',
-            'vk_viewer_group_role': 'member',
-            'back': 'act:user',
-            'action': 'update'  # Добавляем параметр для "Обновить курс"
+            'action': 'update'
         }
-        session.post(update_url, data=update_data, headers=headers)
-        time.sleep(1)  # Ждём обновления
+        session.post(APP_URL, data=update_data, headers=headers)
+        time.sleep(1)
         
         # 4. Получаем страницу с обновлённым курсом
         print("📥 Получаем страницу с курсом...")
