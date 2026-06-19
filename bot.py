@@ -1,12 +1,12 @@
-import time
+import asyncio
 import re
 import random
-import requests
-import os
 import pickle
+import os
 from datetime import datetime
 import vk_api
 from vk_api.utils import get_random_id
+from playwright.async_api import async_playwright
 
 print("🚀 Бот запускается...")
 
@@ -18,7 +18,7 @@ USER_IDS = [
     145156004,
 ]
 
-BUY_THRESHOLD = 70000
+BUY_THRESHOLD = 50000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
@@ -81,63 +81,81 @@ def send_vk_message(text):
     return success_count > 0
 
 
-def get_rate_from_web():
-    """Получает курс через HTTP-запрос с имитацией кнопок"""
+async def get_rate_from_web_async():
+    """Получает курс через Playwright"""
     try:
-        print("🌐 Начинаем запрос...")
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
+        print("🌐 Запускаем браузер...")
         
-        session = requests.Session()
-        
-        print("🌐 Переходим на страницу...")
-        session.get(APP_URL, headers=headers)
-        time.sleep(1)
-        
-        print("🔄 Нажимаем 'Обновить курс'...")
-        update_data = {
-            'act': 'item',
-            'id': '14069',
-            'action': 'update'
-        }
-        session.post(APP_URL, data=update_data, headers=headers)
-        time.sleep(2)
-        
-        print("📥 Получаем страницу с курсом...")
-        response = session.get(APP_URL, headers=headers)
-        response.raise_for_status()
-        
-        html = response.text
-        
-        print(f"📄 HTML получен, длина: {len(html)}")
-        
-        # --- ПАРСИМ КУРС ---
-        # Ищем "Покупка: 🌕59873 => 💎100"
-        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
-        sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
-        
-        if buy_match and sell_match:
-            buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1))
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        # Способ 2: Ищем в блоке program_chat
-        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-        if chat_match:
-            buy_rate = int(chat_match.group(1))
-            sell_rate = int(chat_match.group(2))
-            print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        print("⚠️ Курс не найден на странице")
-        return None, None
+        async with async_playwright() as p:
+            # Запускаем браузер в headless-режиме
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-setuid-sandbox'
+                ]
+            )
+            
+            print("🌐 Открываем страницу...")
+            page = await browser.new_page()
+            
+            # Переходим на страницу
+            await page.goto(APP_URL, timeout=30000)
+            await page.wait_for_load_state("networkidle")
+            
+            print("🔄 Нажимаем 'Узнать курс'...")
+            try:
+                await page.click('text=Узнать курс')
+                await asyncio.sleep(2)
+            except:
+                print("   ⚠️ Кнопка 'Узнать курс' не найдена")
+            
+            print("🔄 Нажимаем 'Обновить курс'...")
+            try:
+                await page.click('text=Обновить курс')
+                await asyncio.sleep(2)
+            except:
+                print("   ⚠️ Кнопка 'Обновить курс' не найдена")
+            
+            print("📥 Получаем HTML...")
+            html = await page.content()
+            
+            await browser.close()
+            
+            print(f"📄 HTML получен, длина: {len(html)}")
+            
+            # --- ПАРСИМ КУРС ---
+            # Ищем "Покупка: 🌕59873 => 💎100"
+            buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
+            sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
+            
+            if buy_match and sell_match:
+                buy_rate = int(buy_match.group(1))
+                sell_rate = int(sell_match.group(1))
+                print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+                return buy_rate, sell_rate
+            
+            # Способ 2: Ищем в блоке program_chat
+            chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+            if chat_match:
+                buy_rate = int(chat_match.group(1))
+                sell_rate = int(chat_match.group(2))
+                print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
+                return buy_rate, sell_rate
+            
+            print("⚠️ Курс не найден на странице")
+            return None, None
             
     except Exception as e:
-        print(f"❌ Ошибка запроса: {e}")
+        print(f"❌ Ошибка Playwright: {e}")
         return None, None
+
+
+def get_rate_from_web():
+    """Обёртка для синхронного вызова асинхронной функции"""
+    return asyncio.run(get_rate_from_web_async())
 
 
 def check_conditions(buy_rate, sell_rate):
