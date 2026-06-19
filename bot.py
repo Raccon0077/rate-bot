@@ -1,17 +1,7 @@
 import time
 import re
-import pickle
-import os
 import random
 import requests
-import zipfile
-import subprocess
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 import vk_api
 from vk_api.utils import get_random_id
@@ -31,9 +21,6 @@ APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9Zg
 
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 13
-
-SAVED_URL_FILE = "saved_url.pkl"
-TEMP_PROFILE_DIR = "/tmp/chrome_profile"
 
 # --- ИНИЦИАЛИЗАЦИЯ VK ---
 vk_session = vk_api.VkApi(token=GROUP_TOKEN)
@@ -62,77 +49,91 @@ def send_vk_message(text):
     return success_count > 0
 
 
-def save_url(url, filename=SAVED_URL_FILE):
+def parse_rate_from_html(html):
+    """Парсит курс из HTML-страницы"""
     try:
-        with open(filename, "wb") as f:
-            pickle.dump(url, f)
-        print(f"✅ URL сохранён: {url}")
-        return True
-    except Exception as e:
-        print(f"❌ Ошибка сохранения URL: {e}")
-        return False
-
-
-def load_url(filename=SAVED_URL_FILE):
-    try:
-        if os.path.exists(filename):
-            with open(filename, "rb") as f:
-                url = pickle.load(f)
-            print(f"✅ Загружен сохранённый URL: {url}")
-            return url
-        else:
-            print("⚠️ Сохранённый URL не найден")
-            return None
-    except Exception as e:
-        print(f"❌ Ошибка загрузки URL: {e}")
-        return None
-
-
-def click_update_button(driver):
-    try:
-        buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
-        if buttons:
-            buttons[0].click()
-            print("🔄 Кнопка 'Обновить курс' нажата")
-            time.sleep(1.5)
-            return True
-        else:
-            buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Обновить')]")
-            for btn in buttons:
-                if 'курс' in btn.text.lower():
-                    btn.click()
-                    print("🔄 Кнопка 'Обновить курс' нажата")
-                    time.sleep(1.5)
-                    return True
-            print("⚠️ Кнопка 'Обновить курс' не найдена")
-            return False
-    except Exception as e:
-        print(f"⚠️ Ошибка при нажатии кнопки: {e}")
-        return False
-
-
-def parse_rate(driver):
-    try:
-        body_text = driver.find_element(By.TAG_NAME, "body").text
-        lines = body_text.split('\n')
+        # Ищем строки с курсом в HTML
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)\s*=>', html)
+        sell_match = re.search(r'Продажа[^0-9]*100\s*=>\s*[^0-9]*([0-9]+)', html)
+        
+        if buy_match and sell_match:
+            buy_rate = int(buy_match.group(1))
+            sell_rate = int(sell_match.group(1))
+            return buy_rate, sell_rate
+        
+        # Альтернативный поиск (если структура другая)
+        buy_match = re.search(r'Покупка:\s*([0-9]+)', html)
+        sell_match = re.search(r'Продажа:\s*100\s*=>\s*([0-9]+)', html)
+        
+        if buy_match and sell_match:
+            buy_rate = int(buy_match.group(1))
+            sell_rate = int(sell_match.group(1))
+            return buy_rate, sell_rate
+        
+        # Если не нашли - ищем все числа рядом с "Покупка" и "Продажа"
+        text = re.sub(r'<[^>]+>', ' ', html)  # Убираем теги
+        lines = text.split('\n')
+        
         buy_rate = None
         sell_rate = None
-
+        
         for line in lines:
             if 'Покупка' in line:
-                match = re.search(r'Покупка[^0-9]*([0-9]+)\s*=>', line)
-                if match:
-                    buy_rate = int(match.group(1))
+                numbers = re.findall(r'([0-9]+)', line)
+                if numbers:
+                    buy_rate = int(numbers[0])
             if 'Продажа' in line:
-                match = re.search(r'=>\s*[^0-9]*([0-9]+)', line)
-                if match:
-                    sell_rate = int(match.group(1))
-
+                numbers = re.findall(r'([0-9]+)', line)
+                if numbers:
+                    sell_rate = int(numbers[-1])  # Берём последнее число
+        
         if buy_rate and sell_rate:
             return buy_rate, sell_rate
+        
         return None, None
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}")
+        return None, None
+
+
+def get_rate_from_web():
+    """Получает курс через HTTP-запрос (без Selenium)"""
+    try:
+        print("🌐 Запрашиваем страницу...")
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        
+        response = requests.get(APP_URL, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        print(f"✅ Страница загружена (длина: {len(response.text)})")
+        
+        # Парсим курс
+        buy_rate, sell_rate = parse_rate_from_html(response.text)
+        
+        if buy_rate and sell_rate:
+            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        else:
+            print("⚠️ Курс не найден на странице")
+            
+            # Сохраняем HTML для отладки
+            with open("debug.html", "w", encoding="utf-8") as f:
+                f.write(response.text)
+            print("📄 Сохранён debug.html")
+            
+            return None, None
+            
+    except requests.exceptions.Timeout:
+        print("❌ Таймаут при загрузке страницы")
+        return None, None
+    except requests.exceptions.ConnectionError:
+        print("❌ Ошибка соединения")
+        return None, None
+    except Exception as e:
+        print(f"❌ Ошибка запроса: {e}")
         return None, None
 
 
@@ -166,125 +167,10 @@ def get_random_delay():
     return random.randint(MIN_CHECK_INTERVAL, MAX_CHECK_INTERVAL)
 
 
-def install_chromedriver():
-    """Устанавливает ChromeDriver вручную через прямой download"""
-    print("📥 Устанавливаем ChromeDriver вручную...")
-    
-    # Создаём папку для chromedriver
-    os.makedirs("/tmp/chromedriver", exist_ok=True)
-    
-    # Скачиваем последнюю версию ChromeDriver
-    chrome_version = "149.0.7122.0"  # Версия, соответствующая вашему Chrome
-    url = f"https://storage.googleapis.com/chrome-for-testing-public/{chrome_version}/linux64/chromedriver-linux64.zip"
-    
-    print(f"   Загружаем: {url}")
-    
-    try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        
-        zip_path = "/tmp/chromedriver.zip"
-        with open(zip_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        print("   Распаковываем...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall("/tmp/chromedriver/")
-        
-        # Ищем chromedriver
-        for root, dirs, files in os.walk("/tmp/chromedriver"):
-            for file in files:
-                if file == "chromedriver" or file.endswith("chromedriver"):
-                    full_path = os.path.join(root, file)
-                    os.chmod(full_path, 0o755)
-                    print(f"✅ ChromeDriver установлен: {full_path}")
-                    return full_path
-        
-        print("❌ Не найден chromedriver в распакованном архиве")
-        return None
-        
-    except Exception as e:
-        print(f"❌ Ошибка установки ChromeDriver: {e}")
-        return None
-
-
-def get_driver():
-    """Создаёт драйвер Chrome с headless-настройками"""
-    options = Options()
-    
-    # Headless настройки
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--remote-debugging-port=9222")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-plugins")
-    
-    options.add_argument(f"--user-data-dir={TEMP_PROFILE_DIR}")
-    
-    # Пробуем найти Chrome
-    chrome_paths = [
-        "/usr/bin/google-chrome",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/usr/local/bin/google-chrome",
-    ]
-    
-    chrome_found = False
-    for path in chrome_paths:
-        if os.path.exists(path):
-            print(f"✅ Найден Chrome: {path}")
-            options.binary_location = path
-            chrome_found = True
-            break
-    
-    if not chrome_found:
-        print("❌ Chrome не найден! Проверьте настройки Docker")
-        raise Exception("Chrome not found")
-    
-    # Пробуем найти ChromeDriver
-    driver_paths = [
-        "/usr/local/bin/chromedriver",
-        "/usr/bin/chromedriver",
-        "/usr/lib/chromium-browser/chromedriver",
-    ]
-    
-    for path in driver_paths:
-        if os.path.exists(path):
-            print(f"✅ Найден ChromeDriver: {path}")
-            service = Service(path)
-            try:
-                driver = webdriver.Chrome(service=service, options=options)
-                print("✅ Драйвер успешно создан!")
-                return driver
-            except Exception as e:
-                print(f"⚠️ Ошибка с {path}: {e}")
-                continue
-    
-    # Если не найден - устанавливаем вручную
-    print("⚠️ ChromeDriver не найден, устанавливаем вручную...")
-    chromedriver_path = install_chromedriver()
-    
-    if chromedriver_path and os.path.exists(chromedriver_path):
-        service = Service(chromedriver_path)
-        driver = webdriver.Chrome(service=service, options=options)
-        print("✅ Драйвер создан через ручную установку!")
-        return driver
-    
-    # Если ничего не сработало
-    raise Exception("Не удалось создать драйвер Chrome")
-
-
 def main():
     global update_count, notification_count
 
-    print("🤖 Бот для отслеживания курса осколков")
+    print("🤖 Бот для отслеживания курса осколков (без Selenium)")
     print("=" * 60)
     print(f"📱 Получателей: {len(USER_IDS)}")
     print("=" * 60)
@@ -296,103 +182,62 @@ def main():
     print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
     print("=" * 60)
 
-    driver = get_driver()
+    last_notification_time = 0
 
-    try:
-        print("\n🔓 Открываем ВКонтакте...")
-        driver.get("https://vk.com")
-        time.sleep(5)
-        print("✅ Страница ВК загружена!")
-
-        saved_url = load_url()
-        if saved_url:
-            print(f"\n🔗 Открываем сохранённую страницу: {saved_url}")
-            driver.get(saved_url)
-        else:
-            print(f"\n🔗 Открываем приложение: {APP_URL}")
-            driver.get(APP_URL)
-
-        time.sleep(5)
-        print("✅ Страница загружена!")
-
-        current_url = driver.current_url
-        print(f"\n📍 Текущий URL: {current_url}")
-
-        if "item&id=14069" not in current_url and "well2.activeusers.ru" not in current_url:
-            print("\n⚠️ Вы не на странице с курсом!")
-            print(f"   Текущий URL: {current_url}")
-            print("   Бот будет работать, но нужно проверить URL")
-
-        print("\n🚀 Запускаем автоматическое обновление...")
-        print(f"   Проверка со случайной задержкой {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
-        print("   Нажмите Ctrl+C для остановки\n")
-
-        last_notification_time = 0
-
-        while True:
-            try:
-                click_update_button(driver)
-                buy_rate, sell_rate = parse_rate(driver)
-
-                if buy_rate and sell_rate:
-                    update_count += 1
-                    print(f"⏰ {datetime.now().strftime('%H:%M:%S')} #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
-
-                    if check_conditions(buy_rate, sell_rate):
-                        notification_count += 1
-                        print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
-                        print(f"   {get_condition_text(buy_rate, sell_rate)}")
-
-                        current_interval = get_notification_interval(notification_count)
-                        current_time = time.time()
-
-                        if current_time - last_notification_time >= current_interval:
-                            message = (
-                                f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
-                                f"\n"
-                                f"🟢 Покупка: {buy_rate} => 100 оск.\n"
-                                f"🔴 Продажа: 100 => {sell_rate} оск.\n"
-                                f"\n"
-                                f"📊 УСЛОВИЯ:\n"
-                                f"   {'✅' if buy_rate < BUY_THRESHOLD else '❌'} Покупка {buy_rate} {'<' if buy_rate < BUY_THRESHOLD else '>='} {BUY_THRESHOLD}\n"
-                                f"   {'✅' if sell_rate > SELL_THRESHOLD else '❌'} Продажа {sell_rate} {'>' if sell_rate > SELL_THRESHOLD else '<='} {SELL_THRESHOLD}\n"
-                                f"\n"
-                                f"⏰ {datetime.now().strftime('%H:%M:%S')}"
-                            )
-
-                            send_vk_message(message)
-                            last_notification_time = current_time
-                            print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} секунд")
-                        else:
-                            wait_time = int(current_interval - (current_time - last_notification_time))
-                            print(f"⏳ Следующее уведомление через {wait_time} сек")
-                    else:
-                        print(f"⏳ Условия не выполнены:")
-                        print(f"   {get_condition_text(buy_rate, sell_rate)}")
-                else:
-                    print("❌ Не удалось получить курс")
-
-                delay = get_random_delay()
-                print(f"⏳ Следующая проверка через {delay} секунд...")
-                time.sleep(delay)
-
-            except KeyboardInterrupt:
-                print("\n⏹ Остановка по запросу пользователя...")
-                break
-            except Exception as e:
-                print(f"❌ Ошибка в цикле: {e}")
-                time.sleep(get_random_delay())
-
-    except KeyboardInterrupt:
-        print("\n⏹ Бот остановлен пользователем")
-    except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
-    finally:
+    while True:
         try:
-            driver.quit()
-            print("✅ Браузер закрыт")
-        except:
-            pass
+            print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
+            
+            buy_rate, sell_rate = get_rate_from_web()
+
+            if buy_rate and sell_rate:
+                update_count += 1
+                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
+
+                if check_conditions(buy_rate, sell_rate):
+                    notification_count += 1
+                    print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
+                    print(f"   {get_condition_text(buy_rate, sell_rate)}")
+
+                    current_interval = get_notification_interval(notification_count)
+                    current_time = time.time()
+
+                    if current_time - last_notification_time >= current_interval:
+                        message = (
+                            f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
+                            f"\n"
+                            f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                            f"🔴 Продажа: 100 => {sell_rate} оск.\n"
+                            f"\n"
+                            f"📊 УСЛОВИЯ:\n"
+                            f"   {'✅' if buy_rate < BUY_THRESHOLD else '❌'} Покупка {buy_rate} {'<' if buy_rate < BUY_THRESHOLD else '>='} {BUY_THRESHOLD}\n"
+                            f"   {'✅' if sell_rate > SELL_THRESHOLD else '❌'} Продажа {sell_rate} {'>' if sell_rate > SELL_THRESHOLD else '<='} {SELL_THRESHOLD}\n"
+                            f"\n"
+                            f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                        )
+
+                        send_vk_message(message)
+                        last_notification_time = current_time
+                        print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} секунд")
+                    else:
+                        wait_time = int(current_interval - (current_time - last_notification_time))
+                        print(f"⏳ Следующее уведомление через {wait_time} сек")
+                else:
+                    print(f"⏳ Условия не выполнены:")
+                    print(f"   {get_condition_text(buy_rate, sell_rate)}")
+            else:
+                print("❌ Не удалось получить курс")
+
+            delay = get_random_delay()
+            print(f"⏳ Следующая проверка через {delay} секунд...")
+            time.sleep(delay)
+
+        except KeyboardInterrupt:
+            print("\n⏹ Остановка по запросу пользователя...")
+            break
+        except Exception as e:
+            print(f"❌ Ошибка в цикле: {e}")
+            time.sleep(get_random_delay())
 
 
 if __name__ == "__main__":
