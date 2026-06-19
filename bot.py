@@ -14,7 +14,7 @@ USER_IDS = [
     145156004,
 ]
 
-BUY_THRESHOLD = 50000
+BUY_THRESHOLD = 70000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
@@ -49,10 +49,19 @@ def send_vk_message(text):
     return success_count > 0
 
 
-def parse_rate_from_html(html):
-    """Парсит курс из HTML-страницы"""
+def get_rate_from_web():
+    """Получает курс через HTTP-запрос"""
     try:
-        # Ищем строки с курсом
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(APP_URL, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        html = response.text
+        
+        # Ищем курс
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)\s*=>', html)
         sell_match = re.search(r'Продажа[^0-9]*100\s*=>\s*[^0-9]*([0-9]+)', html)
         
@@ -70,51 +79,7 @@ def parse_rate_from_html(html):
             sell_rate = int(sell_match.group(1))
             return buy_rate, sell_rate
         
-        # Третий вариант — поиск по тексту без тегов
-        text = re.sub(r'<[^>]+>', ' ', html)
-        lines = text.split('\n')
-        
-        buy_rate = None
-        sell_rate = None
-        
-        for line in lines:
-            if 'Покупка' in line:
-                numbers = re.findall(r'([0-9]+)', line)
-                if numbers:
-                    buy_rate = int(numbers[0])
-            if 'Продажа' in line:
-                numbers = re.findall(r'([0-9]+)', line)
-                if numbers:
-                    sell_rate = int(numbers[-1])
-        
-        if buy_rate and sell_rate:
-            return buy_rate, sell_rate
-        
         return None, None
-    except Exception as e:
-        print(f"❌ Ошибка парсинга: {e}")
-        return None, None
-
-
-def get_rate_from_web():
-    """Получает курс через HTTP-запрос"""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
-        response = requests.get(APP_URL, headers=headers, timeout=15)
-        response.raise_for_status()
-        
-        buy_rate, sell_rate = parse_rate_from_html(response.text)
-        
-        if buy_rate and sell_rate:
-            return buy_rate, sell_rate
-        else:
-            # Сохраняем HTML для отладки
-            with open("debug.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
-            return None, None
             
     except Exception as e:
         print(f"❌ Ошибка запроса: {e}")
