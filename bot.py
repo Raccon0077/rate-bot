@@ -82,7 +82,7 @@ def send_vk_message(text):
 
 
 def get_rate_from_web():
-    """Получает курс через HTTP-запрос с имитацией кнопок"""
+    """Получает курс через HTTP-запрос"""
     try:
         print("🌐 Начинаем запрос...")
         headers = {
@@ -96,32 +96,14 @@ def get_rate_from_web():
         session.get(APP_URL, headers=headers)
         time.sleep(1)
         
-        # --- НАЖИМАЕМ КНОПКУ "Обновить курс" ---
         print("🔄 Нажимаем 'Обновить курс'...")
-        
-        # Пробуем отправить запрос на say_program
-        say_url = "https://well2.activeusers.ru/ajax/say_program"
-        say_data = {
-            'program': '3',  # из onclick: say_program(this, 'Обновить курс', '3')
-            'act': 'item',
-            'id': '14069'
-        }
-        
-        try:
-            session.post(say_url, data=say_data, headers=headers)
-            print("   ✅ Отправлен запрос say_program")
-            time.sleep(2)
-        except:
-            print("   ⚠️ say_program не сработал")
-        
-        # Пробуем обычный POST на главную
         update_data = {
             'act': 'item',
             'id': '14069',
             'action': 'update'
         }
         session.post(APP_URL, data=update_data, headers=headers)
-        time.sleep(1)
+        time.sleep(2)
         
         print("📥 Получаем страницу с курсом...")
         response = session.get(APP_URL, headers=headers)
@@ -131,8 +113,8 @@ def get_rate_from_web():
         
         print(f"📄 HTML получен, длина: {len(html)}")
         
-        # --- ПАРСИНГ ---
-        # Ищем "Покупка: XXXX => 100"
+        # --- ПАРСИМ КУРС ИЗ HTML ---
+        # Ищем "Покупка: 🌕66240 => 💎100"
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
         sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
         
@@ -142,13 +124,11 @@ def get_rate_from_web():
             print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Способ 2: Ищем "Покупка: XXXX" и "Продажа: XXXX"
-        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-        sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
-        
-        if buy_match and sell_match:
-            buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1))
+        # Способ 2: Ищем по div с текстом
+        div_match = re.search(r'Текущий курс осколков:.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+        if div_match:
+            buy_rate = int(div_match.group(1))
+            sell_rate = int(div_match.group(2))
             print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
