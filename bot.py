@@ -3,6 +3,9 @@ import re
 import pickle
 import os
 import random
+import requests
+import zipfile
+import subprocess
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -16,13 +19,11 @@ from vk_api.utils import get_random_id
 # --- НАСТРОЙКИ ---
 GROUP_TOKEN = "vk1.a.8Gc4tpdnYrLN_BRQ1puFlBBWac3X6AivdJGP2S5pNsVIspW2kfn4dWV6nmFh_X8TWKkZm9yzST751CQFdJ84-J30Uq_T_sFoRshtOlgLDlUZ97VAzgDcoj1jh5s5j6ExbTEcNAmNqhgGo6MpjPf8WIPNbyULTIazIJhyLThAHLx8EyLAjyh9Ya8wNrYRK_jyiTqckSnoDHPutcJOk8khpg"
 
-# --- СПИСОК ПОЛУЧАТЕЛЕЙ ---
 USER_IDS = [
     212887447,
     145156004,
 ]
 
-# --- УСЛОВИЯ ---
 BUY_THRESHOLD = 50000
 SELL_THRESHOLD = 60000
 
@@ -32,7 +33,7 @@ MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 13
 
 SAVED_URL_FILE = "saved_url.pkl"
-TEMP_PROFILE_DIR = "/tmp/chrome_profile"  # Используем /tmp для временных файлов
+TEMP_PROFILE_DIR = "/tmp/chrome_profile"
 
 # --- ИНИЦИАЛИЗАЦИЯ VK ---
 vk_session = vk_api.VkApi(token=GROUP_TOKEN)
@@ -165,8 +166,51 @@ def get_random_delay():
     return random.randint(MIN_CHECK_INTERVAL, MAX_CHECK_INTERVAL)
 
 
+def install_chromedriver():
+    """Устанавливает ChromeDriver вручную через прямой download"""
+    print("📥 Устанавливаем ChromeDriver вручную...")
+    
+    # Создаём папку для chromedriver
+    os.makedirs("/tmp/chromedriver", exist_ok=True)
+    
+    # Скачиваем последнюю версию ChromeDriver
+    chrome_version = "149.0.7122.0"  # Версия, соответствующая вашему Chrome
+    url = f"https://storage.googleapis.com/chrome-for-testing-public/{chrome_version}/linux64/chromedriver-linux64.zip"
+    
+    print(f"   Загружаем: {url}")
+    
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        
+        zip_path = "/tmp/chromedriver.zip"
+        with open(zip_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        print("   Распаковываем...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("/tmp/chromedriver/")
+        
+        # Ищем chromedriver
+        for root, dirs, files in os.walk("/tmp/chromedriver"):
+            for file in files:
+                if file == "chromedriver" or file.endswith("chromedriver"):
+                    full_path = os.path.join(root, file)
+                    os.chmod(full_path, 0o755)
+                    print(f"✅ ChromeDriver установлен: {full_path}")
+                    return full_path
+        
+        print("❌ Не найден chromedriver в распакованном архиве")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Ошибка установки ChromeDriver: {e}")
+        return None
+
+
 def get_driver():
-    """Создаёт драйвер Chrome с headless-настройками для сервера"""
+    """Создаёт драйвер Chrome с headless-настройками"""
     options = Options()
     
     # Headless настройки
@@ -182,57 +226,59 @@ def get_driver():
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
     
-    # Профиль в /tmp (чтобы не было проблем с правами)
     options.add_argument(f"--user-data-dir={TEMP_PROFILE_DIR}")
     
-    # Пробуем разные пути к ChromeDriver
+    # Пробуем найти Chrome
     chrome_paths = [
         "/usr/bin/google-chrome",
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
         "/usr/local/bin/google-chrome",
-        "/usr/local/bin/chrome",
     ]
     
-    # Пробуем найти Chrome
-    chrome_binary = None
+    chrome_found = False
     for path in chrome_paths:
         if os.path.exists(path):
-            chrome_binary = path
-            print(f"✅ Найден Chrome: {chrome_binary}")
-            options.binary_location = chrome_binary
+            print(f"✅ Найден Chrome: {path}")
+            options.binary_location = path
+            chrome_found = True
             break
     
-    if not chrome_binary:
-        print("⚠️ Chrome не найден! Устанавливаем через webdriver_manager...")
-        from webdriver_manager.chrome import ChromeDriverManager
-        service = Service(ChromeDriverManager().install())
-        return webdriver.Chrome(service=service, options=options)
+    if not chrome_found:
+        print("❌ Chrome не найден! Проверьте настройки Docker")
+        raise Exception("Chrome not found")
     
-    # Пробуем разные пути к ChromeDriver
+    # Пробуем найти ChromeDriver
     driver_paths = [
-        "/usr/bin/chromedriver",
         "/usr/local/bin/chromedriver",
+        "/usr/bin/chromedriver",
         "/usr/lib/chromium-browser/chromedriver",
     ]
     
-    for driver_path in driver_paths:
-        if os.path.exists(driver_path):
-            print(f"✅ Найден ChromeDriver: {driver_path}")
-            service = Service(driver_path)
+    for path in driver_paths:
+        if os.path.exists(path):
+            print(f"✅ Найден ChromeDriver: {path}")
+            service = Service(path)
             try:
                 driver = webdriver.Chrome(service=service, options=options)
                 print("✅ Драйвер успешно создан!")
                 return driver
             except Exception as e:
-                print(f"⚠️ Ошибка с {driver_path}: {e}")
+                print(f"⚠️ Ошибка с {path}: {e}")
                 continue
     
-    # Если ничего не сработало - пробуем webdriver_manager
-    print("⚠️ ChromeDriver не найден, пробуем webdriver_manager...")
-    from webdriver_manager.chrome import ChromeDriverManager
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    # Если не найден - устанавливаем вручную
+    print("⚠️ ChromeDriver не найден, устанавливаем вручную...")
+    chromedriver_path = install_chromedriver()
+    
+    if chromedriver_path and os.path.exists(chromedriver_path):
+        service = Service(chromedriver_path)
+        driver = webdriver.Chrome(service=service, options=options)
+        print("✅ Драйвер создан через ручную установку!")
+        return driver
+    
+    # Если ничего не сработало
+    raise Exception("Не удалось создать драйвер Chrome")
 
 
 def main():
@@ -248,10 +294,6 @@ def main():
     print("=" * 60)
     print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
     print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
-    print("=" * 60)
-    print("📢 ИНТЕРВАЛЫ УВЕДОМЛЕНИЙ:")
-    print("   - 1-е и 2-е уведомление: 5 секунд")
-    print("   - С 3-го уведомления: 10 секунд")
     print("=" * 60)
 
     driver = get_driver()
