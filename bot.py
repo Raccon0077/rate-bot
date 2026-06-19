@@ -109,71 +109,34 @@ def get_driver():
         raise
 
 
-def get_rate_from_web():
-    """Получает курс через Selenium"""
-    driver = None
-    try:
-        print("🌐 Запускаем браузер...")
-        driver = get_driver()
-        
-        print("🌐 Открываем страницу...")
-        driver.get(APP_URL)
-        time.sleep(3)
-        
-        print("🔄 Нажимаем 'Узнать курс'...")
-        try:
-            learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
-            learn_btn.click()
-            print("   ✅ Нажата кнопка 'Узнать курс'")
-            time.sleep(2)
-        except Exception as e:
-            print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
-        
-        print("🔄 Нажимаем 'Обновить курс'...")
-        try:
-            update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
-            update_btn.click()
-            print("   ✅ Нажата кнопка 'Обновить курс'")
-            time.sleep(2)
-        except Exception as e:
-            print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
-        
-        print("📥 Получаем HTML...")
-        html = driver.page_source
-        
-        print(f"📄 HTML получен, длина: {len(html)}")
-        
-        # --- ПАРСИМ КУРС ---
-        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
-        sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
-        
-        if buy_match and sell_match:
-            buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1))
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        # Способ 2: Ищем в блоке program_chat
-        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-        if chat_match:
-            buy_rate = int(chat_match.group(1))
-            sell_rate = int(chat_match.group(2))
-            print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        print("⚠️ Курс не найден на странице")
-        return None, None
-        
-    except Exception as e:
-        print(f"❌ Ошибка получения курса: {e}")
-        return None, None
-    finally:
-        if driver:
-            try:
-                driver.quit()
-                print("✅ Браузер закрыт")
-            except:
-                pass
+def parse_rate_from_html(html):
+    """Парсит курс из HTML"""
+    buy_rate = None
+    sell_rate = None
+    
+    # Ищем покупку: "Покупка: 🌕59836 => 💎100"
+    buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
+    if buy_match:
+        buy_rate = int(buy_match.group(1))
+        print(f"   Найдена покупка: {buy_rate}")
+    
+    # Ищем продажу: "Продажа: 💎100 => 🌕48987"
+    sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
+    if sell_match:
+        sell_rate = int(sell_match.group(1))
+        print(f"   Найдена продажа: {sell_rate}")
+    
+    if buy_rate and sell_rate:
+        return buy_rate, sell_rate
+    
+    # Способ 2: Ищем в блоке program_chat
+    chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+    if chat_match:
+        buy_rate = int(chat_match.group(1))
+        sell_rate = int(chat_match.group(2))
+        return buy_rate, sell_rate
+    
+    return None, None
 
 
 def check_conditions(buy_rate, sell_rate):
@@ -226,74 +189,142 @@ def main():
         save_state(state)
         print("💚 Отправлено сообщение о запуске бота (первый и единственный раз)")
 
-    while True:
+    # --- ЗАПУСКАЕМ БРАУЗЕР ОДИН РАЗ ---
+    print("\n🌐 Запускаем браузер (он останется открытым)...")
+    driver = get_driver()
+    
+    try:
+        print("🌐 Открываем страницу...")
+        driver.get(APP_URL)
+        time.sleep(3)
+        
+        print("🔄 Нажимаем 'Узнать курс'...")
         try:
-            print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
-            
-            buy_rate, sell_rate = get_rate_from_web()
-
-            if buy_rate and sell_rate:
-                update_count += 1
-                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
-
-                current_time = time.time()
-                if current_time - last_alive_time >= 3600:
-                    alive_count += 1
-                    state = load_state()
-                    state["alive_count"] = alive_count
-                    save_state(state)
-                    
-                    alive_message = (
-                        f"✅ Бот жив и работает!\n"
-                        f"\n"
-                        f"📊 Проверок: {update_count}\n"
-                        f"🟢 Покупка: {buy_rate} => 100 оск.\n"
-                        f"🔴 Продажа: 100 => {sell_rate} оск."
-                    )
-                    send_vk_message(alive_message)
-                    last_alive_time = current_time
-                    print(f"💚 Отправлено сообщение о жизни бота (#{alive_count})")
-
-                conditions_met = check_conditions(buy_rate, sell_rate)
-                print(f"📋 Условия: Покупка {buy_rate} < {BUY_THRESHOLD} = {buy_rate < BUY_THRESHOLD}, Продажа {sell_rate} > {SELL_THRESHOLD} = {sell_rate > SELL_THRESHOLD}")
-                print(f"📋 Результат: {'✅ ВЫПОЛНЕНЫ' if conditions_met else '❌ НЕ ВЫПОЛНЕНЫ'}")
+            learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+            learn_btn.click()
+            print("   ✅ Нажата кнопка 'Узнать курс'")
+            time.sleep(2)
+        except Exception as e:
+            print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+        
+        print("🔄 Нажимаем 'Обновить курс'...")
+        try:
+            update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+            update_btn.click()
+            print("   ✅ Нажата кнопка 'Обновить курс'")
+            time.sleep(2)
+        except Exception as e:
+            print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+        
+        print("✅ Браузер готов, начинаем проверку курса...\n")
+        
+        while True:
+            try:
+                print(f"⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
                 
-                if conditions_met:
-                    notification_count += 1
-                    print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
+                # --- ОБНОВЛЯЕМ СТРАНИЦУ И НАЖИМАЕМ КНОПКИ ---
+                print("🔄 Обновляем страницу...")
+                driver.refresh()
+                time.sleep(2)
+                
+                print("🔄 Нажимаем 'Узнать курс'...")
+                try:
+                    learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+                    learn_btn.click()
+                    print("   ✅ Нажата кнопка 'Узнать курс'")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+                
+                print("🔄 Нажимаем 'Обновить курс'...")
+                try:
+                    update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+                    update_btn.click()
+                    print("   ✅ Нажата кнопка 'Обновить курс'")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+                
+                # --- ПОЛУЧАЕМ HTML ---
+                html = driver.page_source
+                print(f"📄 HTML получен, длина: {len(html)}")
+                
+                # --- ПАРСИМ КУРС ---
+                buy_rate, sell_rate = parse_rate_from_html(html)
 
-                    current_interval = get_notification_interval(notification_count)
+                if buy_rate and sell_rate:
+                    update_count += 1
+                    print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
+
                     current_time = time.time()
-
-                    if current_time - last_notification_time >= current_interval:
-                        message = (
-                            f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
+                    if current_time - last_alive_time >= 3600:
+                        alive_count += 1
+                        state = load_state()
+                        state["alive_count"] = alive_count
+                        save_state(state)
+                        
+                        alive_message = (
+                            f"✅ Бот жив и работает!\n"
                             f"\n"
+                            f"📊 Проверок: {update_count}\n"
                             f"🟢 Покупка: {buy_rate} => 100 оск.\n"
                             f"🔴 Продажа: 100 => {sell_rate} оск."
                         )
+                        send_vk_message(alive_message)
+                        last_alive_time = current_time
+                        print(f"💚 Отправлено сообщение о жизни бота (#{alive_count})")
 
-                        send_vk_message(message)
-                        last_notification_time = current_time
-                        print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
+                    conditions_met = check_conditions(buy_rate, sell_rate)
+                    print(f"📋 Условия: Покупка {buy_rate} < {BUY_THRESHOLD} = {buy_rate < BUY_THRESHOLD}, Продажа {sell_rate} > {SELL_THRESHOLD} = {sell_rate > SELL_THRESHOLD}")
+                    print(f"📋 Результат: {'✅ ВЫПОЛНЕНЫ' if conditions_met else '❌ НЕ ВЫПОЛНЕНЫ'}")
+                    
+                    if conditions_met:
+                        notification_count += 1
+                        print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
+
+                        current_interval = get_notification_interval(notification_count)
+                        current_time = time.time()
+
+                        if current_time - last_notification_time >= current_interval:
+                            message = (
+                                f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
+                                f"\n"
+                                f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                                f"🔴 Продажа: 100 => {sell_rate} оск."
+                            )
+
+                            send_vk_message(message)
+                            last_notification_time = current_time
+                            print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
+                        else:
+                            wait_time = int(current_interval - (current_time - last_notification_time))
+                            print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
                     else:
-                        wait_time = int(current_interval - (current_time - last_notification_time))
-                        print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
+                        print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
                 else:
-                    print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
-            else:
-                print("❌ Не удалось получить курс")
+                    print("❌ Не удалось получить курс")
 
-            delay = get_random_delay()
-            print(f"⏳ Следующая проверка через {delay} секунд...")
-            time.sleep(delay)
+                delay = get_random_delay()
+                print(f"⏳ Следующая проверка через {delay} секунд...")
+                time.sleep(delay)
 
-        except KeyboardInterrupt:
-            print("\n⏹ Остановка...")
-            break
-        except Exception as e:
-            print(f"❌ Ошибка: {e}")
-            time.sleep(get_random_delay())
+            except KeyboardInterrupt:
+                print("\n⏹ Остановка...")
+                break
+            except Exception as e:
+                print(f"❌ Ошибка в цикле: {e}")
+                time.sleep(get_random_delay())
+                
+    except KeyboardInterrupt:
+        print("\n⏹ Остановка...")
+    except Exception as e:
+        print(f"❌ Критическая ошибка: {e}")
+    finally:
+        try:
+            driver.quit()
+            print("✅ Браузер закрыт")
+        except:
+            pass
 
 
 if __name__ == "__main__":
