@@ -157,13 +157,14 @@ def get_rate_from_web():
 
 
 def check_conditions(buy_rate, sell_rate):
-    """Проверяет условия (остаётся в коде, но не показывается пользователю)"""
+    """Проверяет условия (ХОТЯ БЫ ОДНО)"""
     buy_condition = buy_rate < BUY_THRESHOLD
     sell_condition = sell_rate > SELL_THRESHOLD
     return buy_condition or sell_condition
 
 
 def get_notification_interval(notification_count):
+    """Интервал между уведомлениями: первые 2 раза - 5 сек, затем - 10 сек"""
     return 5 if notification_count < 2 else 10
 
 
@@ -231,7 +232,7 @@ def main():
                     last_alive_time = current_time
                     print(f"💚 Отправлено сообщение о жизни бота")
 
-                # --- ПРОВЕРКА УСЛОВИЙ ---
+                # --- ПРОВЕРКА УСЛОВИЙ (ОТПРАВКА ТОЛЬКО ЕСЛИ ВЫГОДНО) ---
                 if check_conditions(buy_rate, sell_rate):
                     notification_count += 1
                     print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
@@ -241,8 +242,8 @@ def main():
                     current_interval = get_notification_interval(notification_count)
                     current_time = time.time()
 
+                    # Проверяем, прошло ли достаточно времени с последней отправки
                     if current_time - last_notification_time >= current_interval:
-                        # --- ОТПРАВКА СООБЩЕНИЯ БЕЗ УСЛОВИЙ ---
                         message = (
                             f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
                             f"\n"
@@ -256,7 +257,7 @@ def main():
                         last_notification_time = current_time
                         print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
                 else:
-                    print(f"⏳ Условия не выполнены:")
+                    print(f"⏳ Условия не выполнены (сообщение НЕ отправлено):")
                     print(f"   Покупка {buy_rate} >= {BUY_THRESHOLD} или Продажа {sell_rate} <= {SELL_THRESHOLD}")
             else:
                 print("❌ Не удалось получить курс")
