@@ -18,7 +18,7 @@ USER_IDS = [
     145156004,
 ]
 
-BUY_THRESHOLD = 70000
+BUY_THRESHOLD = 50000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
@@ -96,17 +96,25 @@ def get_rate_from_web():
         session.get(APP_URL, headers=headers)
         time.sleep(1)
         
-        print("🔄 Нажимаем 'Узнать курс'...")
-        learn_data = {
-            'act': 'item',
-            'id': '14069',
-            'program': '51164l9l1809791bb20cc8f8',
-            'action': 'learn'
-        }
-        session.post(APP_URL, data=learn_data, headers=headers)
-        time.sleep(1)
-        
+        # --- НАЖИМАЕМ КНОПКУ "Обновить курс" ---
         print("🔄 Нажимаем 'Обновить курс'...")
+        
+        # Пробуем отправить запрос на say_program
+        say_url = "https://well2.activeusers.ru/ajax/say_program"
+        say_data = {
+            'program': '3',  # из onclick: say_program(this, 'Обновить курс', '3')
+            'act': 'item',
+            'id': '14069'
+        }
+        
+        try:
+            session.post(say_url, data=say_data, headers=headers)
+            print("   ✅ Отправлен запрос say_program")
+            time.sleep(2)
+        except:
+            print("   ⚠️ say_program не сработал")
+        
+        # Пробуем обычный POST на главную
         update_data = {
             'act': 'item',
             'id': '14069',
@@ -123,10 +131,8 @@ def get_rate_from_web():
         
         print(f"📄 HTML получен, длина: {len(html)}")
         
-        # --- ИЩЕМ КУРС СТРОГО ПО КЛЮЧЕВЫМ СЛОВАМ ---
-        
-        # Способ 1: Ищем "Покупка: XXXX => 100" и "Продажа: 100 => XXXX"
-        # Убираем всё, что между словами и числами
+        # --- ПАРСИНГ ---
+        # Ищем "Покупка: XXXX => 100"
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
         sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
         
@@ -136,7 +142,7 @@ def get_rate_from_web():
             print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Способ 2: Ищем "Покупка: XXXX" и "Продажа: YYYY"
+        # Способ 2: Ищем "Покупка: XXXX" и "Продажа: XXXX"
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
         
@@ -144,45 +150,6 @@ def get_rate_from_web():
             buy_rate = int(buy_match.group(1))
             sell_rate = int(sell_match.group(1))
             print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        # Способ 3: Поиск по строкам
-        lines = html.split('\n')
-        buy_rate = None
-        sell_rate = None
-        
-        for line in lines:
-            # Ищем строку с покупкой
-            if 'Покупка' in line:
-                # Ищем числа в строке
-                nums = re.findall(r'\b([0-9]+)\b', line)
-                if len(nums) >= 2:
-                    # Первое число - это покупка (например, 51219)
-                    buy_rate = int(nums[0])
-                    print(f"   Найдена покупка: {buy_rate}")
-            # Ищем строку с продажей
-            if 'Продажа' in line:
-                nums = re.findall(r'\b([0-9]+)\b', line)
-                if len(nums) >= 2:
-                    # Второе число - это продажа (например, 57862)
-                    sell_rate = int(nums[1])
-                    print(f"   Найдена продажа: {sell_rate}")
-        
-        if buy_rate and sell_rate:
-            print(f"✅ Найден курс (способ 3): покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        # Способ 4: Если ничего не нашлось - ищем через очистку от HTML
-        clean_html = re.sub(r'<[^>]+>', ' ', html)
-        clean_html = re.sub(r'\s+', ' ', clean_html)
-        
-        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', clean_html)
-        sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', clean_html)
-        
-        if buy_match and sell_match:
-            buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1))
-            print(f"✅ Найден курс (способ 4): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         print("⚠️ Курс не найден на странице")
