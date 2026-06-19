@@ -38,7 +38,7 @@ except Exception as e:
 update_count = 0
 notification_count = 0
 last_alive_time = time.time()
-first_start = True  # Флаг для первого запуска
+first_start = True
 
 
 def send_vk_message(text):
@@ -158,7 +158,9 @@ def get_rate_from_web():
 
 def check_conditions(buy_rate, sell_rate):
     """Проверяет условия (остаётся в коде, но не показывается пользователю)"""
-    return buy_rate < BUY_THRESHOLD or sell_rate > SELL_THRESHOLD
+    buy_condition = buy_rate < BUY_THRESHOLD
+    sell_condition = sell_rate > SELL_THRESHOLD
+    return buy_condition or sell_condition
 
 
 def get_notification_interval(notification_count):
@@ -233,6 +235,8 @@ def main():
                 if check_conditions(buy_rate, sell_rate):
                     notification_count += 1
                     print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
+                    print(f"   Покупка {buy_rate} < {BUY_THRESHOLD}: {buy_rate < BUY_THRESHOLD}")
+                    print(f"   Продажа {sell_rate} > {SELL_THRESHOLD}: {sell_rate > SELL_THRESHOLD}")
 
                     current_interval = get_notification_interval(notification_count)
                     current_time = time.time()
