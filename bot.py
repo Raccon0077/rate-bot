@@ -45,7 +45,6 @@ last_alive_time = time.time()
 
 
 def load_state():
-    """Загружает состояние из файла"""
     try:
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "rb") as f:
@@ -56,7 +55,6 @@ def load_state():
 
 
 def save_state(state):
-    """Сохраняет состояние в файл"""
     try:
         with open(STATE_FILE, "wb") as f:
             pickle.dump(state, f)
@@ -125,32 +123,30 @@ def get_rate_from_web():
         
         print(f"📄 HTML получен, длина: {len(html)}")
         
-        # --- ИЩЕМ КУРС ---
+        # --- ПРАВИЛЬНЫЙ ПАРСИНГ КУРСА ---
+        # Ищем строку с покупкой и продажей
+        
+        # Способ 1: Ищем по тексту "Покупка" и "Продажа" с числами
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
         
         if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
             sell_rate = int(sell_match.group(2))
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс (способ 1): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+        # Способ 2: Ищем "Покупка: XXXX => 100" и "Продажа: 100 => XXXX"
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
         sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
         
         if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
             sell_rate = int(sell_match.group(1))
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        numbers = re.findall(r'\b([5-7][0-9]{4})\b', html)
-        if len(numbers) >= 2:
-            buy_rate = int(numbers[0])
-            sell_rate = int(numbers[1])
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
+        # Способ 3: Ищем по строкам (самый надёжный)
         lines = html.split('\n')
         buy_rate = None
         sell_rate = None
@@ -158,17 +154,28 @@ def get_rate_from_web():
         for line in lines:
             if 'Покупка' in line:
                 nums = re.findall(r'\b([0-9]+)\b', line)
-                if nums:
+                if len(nums) >= 2:
                     buy_rate = int(nums[0])
-                    print(f"   Найдена покупка: {buy_rate}")
+                    print(f"   Найдена покупка: {buy_rate} (из строки: {line[:100]})")
             if 'Продажа' in line:
                 nums = re.findall(r'\b([0-9]+)\b', line)
                 if len(nums) >= 2:
                     sell_rate = int(nums[1])
-                    print(f"   Найдена продажа: {sell_rate}")
+                    print(f"   Найдена продажа: {sell_rate} (из строки: {line[:100]})")
         
         if buy_rate and sell_rate:
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+            print(f"✅ Найден курс (способ 3): покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        
+        # Способ 4: Ищем числа в тексте (если ничего не сработало)
+        text_without_tags = re.sub(r'<[^>]+>', ' ', html)
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', text_without_tags)
+        sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', text_without_tags)
+        
+        if buy_match and sell_match:
+            buy_rate = int(buy_match.group(1))
+            sell_rate = int(sell_match.group(1))
+            print(f"✅ Найден курс (способ 4): покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
         print("⚠️ Курс не найден на странице")
@@ -180,14 +187,12 @@ def get_rate_from_web():
 
 
 def check_conditions(buy_rate, sell_rate):
-    """Проверяет условия (ХОТЯ БЫ ОДНО)"""
     buy_condition = buy_rate < BUY_THRESHOLD
     sell_condition = sell_rate > SELL_THRESHOLD
     return buy_condition or sell_condition
 
 
 def get_notification_interval(notification_count):
-    """Интервал между уведомлениями: первые 2 раза - 5 сек, затем - 10 сек"""
     return 5 if notification_count < 2 else 10
 
 
@@ -214,12 +219,10 @@ def main():
 
     last_notification_time = 0
 
-    # --- ЗАГРУЖАЕМ СОСТОЯНИЕ ---
     state = load_state()
     first_start_done = state.get("first_start_done", False)
     alive_count = state.get("alive_count", 0)
 
-    # --- ПЕРВОЕ СООБЩЕНИЕ ПРИ ЗАПУСКЕ (ТОЛЬКО ОДИН РАЗ) ---
     if not first_start_done:
         start_message = (
             f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ!\n"
@@ -243,7 +246,6 @@ def main():
                 update_count += 1
                 print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
 
-                # --- ПРОВЕРКА "ЖИВ ЛИ БОТ" КАЖДЫЙ ЧАС ---
                 current_time = time.time()
                 if current_time - last_alive_time >= 3600:
                     alive_count += 1
@@ -262,7 +264,6 @@ def main():
                     last_alive_time = current_time
                     print(f"💚 Отправлено сообщение о жизни бота (#{alive_count})")
 
-                # --- ПРОВЕРКА УСЛОВИЙ ---
                 conditions_met = check_conditions(buy_rate, sell_rate)
                 print(f"📋 Условия: Покупка {buy_rate} < {BUY_THRESHOLD} = {buy_rate < BUY_THRESHOLD}, Продажа {sell_rate} > {SELL_THRESHOLD} = {sell_rate > SELL_THRESHOLD}")
                 print(f"📋 Результат: {'✅ ВЫПОЛНЕНЫ' if conditions_met else '❌ НЕ ВЫПОЛНЕНЫ'}")
