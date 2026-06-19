@@ -1,13 +1,18 @@
-import asyncio
 import time
 import re
-import random
 import pickle
 import os
+import random
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 import vk_api
 from vk_api.utils import get_random_id
-from playwright.async_api import async_playwright
+from webdriver_manager.chrome import ChromeDriverManager
 
 print("🚀 Бот запускается...")
 
@@ -43,6 +48,8 @@ except Exception as e:
 update_count = 0
 notification_count = 0
 last_alive_time = time.time()
+first_start = True
+
 
 def load_state():
     try:
@@ -81,77 +88,81 @@ def send_vk_message(text):
     return success_count > 0
 
 
-async def get_rate_from_web_async():
-    """Получает курс через Playwright"""
-    try:
-        print("🌐 Запускаем браузер...")
-        
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-setuid-sandbox'
-                ]
-            )
-            
-            print("🌐 Открываем страницу...")
-            page = await browser.new_page()
-            
-            await page.goto(APP_URL, timeout=30000)
-            await page.wait_for_load_state("networkidle")
-            
-            print("🔄 Нажимаем 'Узнать курс'...")
-            try:
-                await page.click('text=Узнать курс')
-                await asyncio.sleep(2)
-            except:
-                print("   ⚠️ Кнопка 'Узнать курс' не найдена")
-            
-            print("🔄 Нажимаем 'Обновить курс'...")
-            try:
-                await page.click('text=Обновить курс')
-                await asyncio.sleep(2)
-            except:
-                print("   ⚠️ Кнопка 'Обновить курс' не найдена")
-            
-            print("📥 Получаем HTML...")
-            html = await page.content()
-            
-            await browser.close()
-            
-            print(f"📄 HTML получен, длина: {len(html)}")
-            
-            # --- ПАРСИМ КУРС ---
-            buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
-            sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
-            
-            if buy_match and sell_match:
-                buy_rate = int(buy_match.group(1))
-                sell_rate = int(sell_match.group(1))
-                print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
-                return buy_rate, sell_rate
-            
-            chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-            if chat_match:
-                buy_rate = int(chat_match.group(1))
-                sell_rate = int(chat_match.group(2))
-                print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
-                return buy_rate, sell_rate
-            
-            print("⚠️ Курс не найден на странице")
-            return None, None
-            
-    except Exception as e:
-        print(f"❌ Ошибка Playwright: {e}")
-        return None, None
+def get_driver():
+    """Создаёт драйвер Chrome с headless-настройками"""
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+    options.add_argument("--window-size=1920,1080")
+    
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=options)
 
 
 def get_rate_from_web():
-    """Обёртка для синхронного вызова асинхронной функции"""
-    return asyncio.run(get_rate_from_web_async())
+    """Получает курс через Selenium"""
+    driver = None
+    try:
+        print("🌐 Запускаем браузер...")
+        driver = get_driver()
+        
+        print("🌐 Открываем страницу...")
+        driver.get(APP_URL)
+        time.sleep(3)
+        
+        print("🔄 Нажимаем 'Узнать курс'...")
+        try:
+            learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+            learn_btn.click()
+            time.sleep(2)
+        except:
+            print("   ⚠️ Кнопка 'Узнать курс' не найдена")
+        
+        print("🔄 Нажимаем 'Обновить курс'...")
+        try:
+            update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+            update_btn.click()
+            time.sleep(2)
+        except:
+            print("   ⚠️ Кнопка 'Обновить курс' не найдена")
+        
+        print("📥 Получаем HTML...")
+        html = driver.page_source
+        
+        print(f"📄 HTML получен, длина: {len(html)}")
+        
+        # --- ПАРСИМ КУРС ---
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
+        sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
+        
+        if buy_match and sell_match:
+            buy_rate = int(buy_match.group(1))
+            sell_rate = int(sell_match.group(1))
+            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        
+        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+        if chat_match:
+            buy_rate = int(chat_match.group(1))
+            sell_rate = int(chat_match.group(2))
+            print(f"✅ Найден курс (способ 2): покупка {buy_rate}, продажа {sell_rate}")
+            return buy_rate, sell_rate
+        
+        print("⚠️ Курс не найден на странице")
+        return None, None
+        
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
+        return None, None
+    finally:
+        if driver:
+            driver.quit()
+            print("✅ Браузер закрыт")
 
 
 def check_conditions(buy_rate, sell_rate):
@@ -169,7 +180,7 @@ def get_random_delay():
 
 
 def main():
-    global update_count, notification_count, last_alive_time
+    global update_count, notification_count, last_alive_time, first_start
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
