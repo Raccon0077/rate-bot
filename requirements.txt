@@ -1,2 +1,3 @@
 requests
 vk-api
+playwright
