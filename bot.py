@@ -14,7 +14,7 @@ USER_IDS = [
     145156004,
 ]
 
-BUY_THRESHOLD = 50000
+BUY_THRESHOLD = 70000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
@@ -52,7 +52,7 @@ def send_vk_message(text):
 def parse_rate_from_html(html):
     """Парсит курс из HTML-страницы"""
     try:
-        # Ищем строки с курсом в HTML
+        # Ищем строки с курсом
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)\s*=>', html)
         sell_match = re.search(r'Продажа[^0-9]*100\s*=>\s*[^0-9]*([0-9]+)', html)
         
@@ -61,7 +61,7 @@ def parse_rate_from_html(html):
             sell_rate = int(sell_match.group(1))
             return buy_rate, sell_rate
         
-        # Альтернативный поиск (если структура другая)
+        # Альтернативный поиск
         buy_match = re.search(r'Покупка:\s*([0-9]+)', html)
         sell_match = re.search(r'Продажа:\s*100\s*=>\s*([0-9]+)', html)
         
@@ -70,8 +70,8 @@ def parse_rate_from_html(html):
             sell_rate = int(sell_match.group(1))
             return buy_rate, sell_rate
         
-        # Если не нашли - ищем все числа рядом с "Покупка" и "Продажа"
-        text = re.sub(r'<[^>]+>', ' ', html)  # Убираем теги
+        # Третий вариант — поиск по тексту без тегов
+        text = re.sub(r'<[^>]+>', ' ', html)
         lines = text.split('\n')
         
         buy_rate = None
@@ -85,7 +85,7 @@ def parse_rate_from_html(html):
             if 'Продажа' in line:
                 numbers = re.findall(r'([0-9]+)', line)
                 if numbers:
-                    sell_rate = int(numbers[-1])  # Берём последнее число
+                    sell_rate = int(numbers[-1])
         
         if buy_rate and sell_rate:
             return buy_rate, sell_rate
@@ -97,70 +97,43 @@ def parse_rate_from_html(html):
 
 
 def get_rate_from_web():
-    """Получает курс через HTTP-запрос (без Selenium)"""
+    """Получает курс через HTTP-запрос"""
     try:
-        print("🌐 Запрашиваем страницу...")
-        
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
-        response = requests.get(APP_URL, headers=headers, timeout=30)
+        response = requests.get(APP_URL, headers=headers, timeout=15)
         response.raise_for_status()
         
-        print(f"✅ Страница загружена (длина: {len(response.text)})")
-        
-        # Парсим курс
         buy_rate, sell_rate = parse_rate_from_html(response.text)
         
         if buy_rate and sell_rate:
-            print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         else:
-            print("⚠️ Курс не найден на странице")
-            
             # Сохраняем HTML для отладки
             with open("debug.html", "w", encoding="utf-8") as f:
                 f.write(response.text)
-            print("📄 Сохранён debug.html")
-            
             return None, None
             
-    except requests.exceptions.Timeout:
-        print("❌ Таймаут при загрузке страницы")
-        return None, None
-    except requests.exceptions.ConnectionError:
-        print("❌ Ошибка соединения")
-        return None, None
     except Exception as e:
         print(f"❌ Ошибка запроса: {e}")
         return None, None
 
 
 def check_conditions(buy_rate, sell_rate):
-    buy_condition = buy_rate < BUY_THRESHOLD
-    sell_condition = sell_rate > SELL_THRESHOLD
-    return buy_condition or sell_condition
+    return buy_rate < BUY_THRESHOLD or sell_rate > SELL_THRESHOLD
 
 
 def get_condition_text(buy_rate, sell_rate):
     conditions = []
-    if buy_rate < BUY_THRESHOLD:
-        conditions.append(f"✅ Покупка {buy_rate} < {BUY_THRESHOLD}")
-    else:
-        conditions.append(f"❌ Покупка {buy_rate} >= {BUY_THRESHOLD}")
-    if sell_rate > SELL_THRESHOLD:
-        conditions.append(f"✅ Продажа {sell_rate} > {SELL_THRESHOLD}")
-    else:
-        conditions.append(f"❌ Продажа {sell_rate} <= {SELL_THRESHOLD}")
+    conditions.append(f"{'✅' if buy_rate < BUY_THRESHOLD else '❌'} Покупка {buy_rate} {'<' if buy_rate < BUY_THRESHOLD else '>='} {BUY_THRESHOLD}")
+    conditions.append(f"{'✅' if sell_rate > SELL_THRESHOLD else '❌'} Продажа {sell_rate} {'>' if sell_rate > SELL_THRESHOLD else '<='} {SELL_THRESHOLD}")
     return "\n".join(conditions)
 
 
 def get_notification_interval(notification_count):
-    if notification_count < 2:
-        return 5
-    else:
-        return 10
+    return 5 if notification_count < 2 else 10
 
 
 def get_random_delay():
@@ -170,7 +143,7 @@ def get_random_delay():
 def main():
     global update_count, notification_count
 
-    print("🤖 Бот для отслеживания курса осколков (без Selenium)")
+    print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
     print(f"📱 Получателей: {len(USER_IDS)}")
     print("=" * 60)
@@ -218,10 +191,7 @@ def main():
 
                         send_vk_message(message)
                         last_notification_time = current_time
-                        print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} секунд")
-                    else:
-                        wait_time = int(current_interval - (current_time - last_notification_time))
-                        print(f"⏳ Следующее уведомление через {wait_time} сек")
+                        print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
                 else:
                     print(f"⏳ Условия не выполнены:")
                     print(f"   {get_condition_text(buy_rate, sell_rate)}")
@@ -233,10 +203,10 @@ def main():
             time.sleep(delay)
 
         except KeyboardInterrupt:
-            print("\n⏹ Остановка по запросу пользователя...")
+            print("\n⏹ Остановка...")
             break
         except Exception as e:
-            print(f"❌ Ошибка в цикле: {e}")
+            print(f"❌ Ошибка: {e}")
             time.sleep(get_random_delay())
 
 
