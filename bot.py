@@ -88,7 +88,6 @@ def send_vk_message(text):
 
 
 def get_driver():
-    """Создаёт драйвер Chrome с headless-настройками для сервера"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -114,28 +113,28 @@ def parse_rate_from_html(html):
     buy_rate = None
     sell_rate = None
     
-    # Ищем покупку: "Покупка: 🌕59836 => 💎100"
+    # Ищем покупку: "Покупка: 🌕50064 => 💎100"
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
     if buy_match:
         buy_rate = int(buy_match.group(1))
         print(f"   Найдена покупка: {buy_rate}")
     
-    # Ищем продажу: ищем число ПОСЛЕ "=>" в строке с "Продажа"
-    # Например: "Продажа: 💎100 => 🌕7117" -> берём 7117
+    # Ищем продажу: "Продажа: 💎100 => 🌕50000"
+    # Берём число ПОСЛЕ "=>" (второе число)
     sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
     if sell_match:
         sell_rate = int(sell_match.group(1))
         print(f"   Найдена продажа: {sell_rate}")
     
-    if buy_rate and sell_rate:
-        return buy_rate, sell_rate
+    # Если не нашли через первый способ, пробуем через chat
+    if not buy_rate or not sell_rate:
+        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+        if chat_match:
+            buy_rate = int(chat_match.group(1))
+            sell_rate = int(chat_match.group(2))
+            print(f"   Найдено через chat: покупка {buy_rate}, продажа {sell_rate}")
     
-    # Способ 2: Ищем в блоке program_chat
-    chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-    if chat_match:
-        buy_rate = int(chat_match.group(1))
-        sell_rate = int(chat_match.group(2))
-        print(f"   Найдено через chat: покупка {buy_rate}, продажа {sell_rate}")
+    if buy_rate and sell_rate:
         return buy_rate, sell_rate
     
     return None, None
@@ -191,7 +190,6 @@ def main():
         save_state(state)
         print("💚 Отправлено сообщение о запуске бота (первый и единственный раз)")
 
-    # --- ЗАПУСКАЕМ БРАУЗЕР ОДИН РАЗ ---
     print("\n🌐 Запускаем браузер (он останется открытым)...")
     driver = get_driver()
     
@@ -224,7 +222,6 @@ def main():
             try:
                 print(f"⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
                 
-                # --- ОБНОВЛЯЕМ СТРАНИЦУ И НАЖИМАЕМ КНОПКИ ---
                 print("🔄 Обновляем страницу...")
                 driver.refresh()
                 time.sleep(2)
@@ -247,11 +244,9 @@ def main():
                 except Exception as e:
                     print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
                 
-                # --- ПОЛУЧАЕМ HTML ---
                 html = driver.page_source
                 print(f"📄 HTML получен, длина: {len(html)}")
                 
-                # --- ПАРСИМ КУРС ---
                 buy_rate, sell_rate = parse_rate_from_html(html)
 
                 if buy_rate and sell_rate:
