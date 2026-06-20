@@ -4,6 +4,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 print("🚀 Бот запускается...")
@@ -27,27 +29,53 @@ try:
     driver.get(APP_URL)
     time.sleep(5)
     
+    # --- НАЖИМАЕМ КНОПКИ ---
+    print("🔄 Нажимаем 'Узнать курс'...")
+    try:
+        learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+        learn_btn.click()
+        print("   ✅ Нажата кнопка 'Узнать курс'")
+        time.sleep(3)
+    except Exception as e:
+        print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+    
+    print("🔄 Нажимаем 'Обновить курс'...")
+    try:
+        update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+        update_btn.click()
+        print("   ✅ Нажата кнопка 'Обновить курс'")
+        time.sleep(3)
+    except Exception as e:
+        print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+    
     print("📄 Сохраняем HTML...")
     html = driver.page_source
     
     print("🔍 Ищем курс...")
     
-    # Ищем числа
-    numbers = re.findall(r'\b([0-9]{4,6})\b', html)
-    print(f"Найдены числа: {numbers[:20]}")
-    
-    # Ищем "Покупка"
+    # --- ИЩЕМ В HTML ---
     if 'Покупка' in html:
         pos = html.find('Покупка')
-        print(f"Покупка: {html[pos:pos+200]}")
+        print(f"✅ 'Покупка' найдена: {html[pos:pos+200]}")
     else:
-        print("❌ 'Покупка' не найдена")
+        print("❌ 'Покупка' НЕ найдена")
     
     if 'Продажа' in html:
         pos = html.find('Продажа')
-        print(f"Продажа: {html[pos:pos+200]}")
+        print(f"✅ 'Продажа' найдена: {html[pos:pos+200]}")
     else:
-        print("❌ 'Продажа' не найдена")
+        print("❌ 'Продажа' НЕ найдена")
+    
+    # --- ПАРСИМ КУРС ---
+    buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+    sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
+    
+    if buy_match and sell_match:
+        buy_rate = int(buy_match.group(1))
+        sell_rate = int(sell_match.group(1))
+        print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
+    else:
+        print("❌ КУРС НЕ НАЙДЕН")
     
 except Exception as e:
     print(f"❌ Ошибка: {e}")
