@@ -17,8 +17,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 print("🚀 Бот запускается...")
 
 # --- НАСТРОЙКИ ---
-GROUP_TOKEN = "vk1.a.MhgbLlQmw_TqtPUfFlUpXKNc7VGyn8GTFmhnFUlZLUXfVylf14sIxf9tdbqpzrrexoEBd5Jwa8vxKZ28DrsroeFsMX7FP3W-1mQSRnGQmukdl83ippgTsX4eaQ-MdnTnzkZWTBZ-fKPDOXzb-azjiMVXHoi8W5EXK2I2XjLbBeGQue6-W3AfW4R1EnpdQwC4Bmdqt9zppplECNU2fKdobQ"
-
+GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgnXYGZYYm_h0SQBhy71_5AG5HcIb3csegaBnks_1PweRiC20t5Im-hfbhkZnVNykMmFJBEbzPZ52WoJWzXPPZYXwa1_wJfxmtfmd86W7OcBSMuK2AGCYsJO97g6MB5pPhLRYJVE_KFBO9lK0JpfeiPPy9aRSg"
 USER_IDS = [
     212887447,
     145156004,
