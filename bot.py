@@ -18,9 +18,13 @@ print("🚀 Бот запускается...")
 
 # --- НАСТРОЙКИ ---
 GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgnXYGZYYm_h0SQBhy71_5AG5HcIb3csegaBnks_1PweRiC20t5Im-hfbhkZnVNykMmFJBEbzPZ52WoJWzXPPZYXwa1_wJfxmtfmd86W7OcBSMuK2AGCYsJO97g6MB5pPhLRYJVE_KFBO9lK0JpfeiPPy9aRSg"
+
+# --- ПОЛУЧАТЕЛИ ---
+ADMIN_ID = 212887447  # Главный пользователь (получает "Бот запущен" и "Бот жив")
 USER_IDS = [
     212887447,
     145156004,
+    # Добавляйте других пользователей, которые получают уведомления о курсе
 ]
 
 BUY_THRESHOLD = 50000
@@ -31,7 +35,10 @@ APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9Zg
 # --- ИНТЕРВАЛЫ ---
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 13
-ALIVE_INTERVAL = 300  # 5 минут (300 секунд)
+
+# --- "БОТ ЖИВ" — СЛУЧАЙНО ОТ 5 ДО 10 МИНУТ ---
+MIN_ALIVE_INTERVAL = 300   # 5 минут (в секундах)
+MAX_ALIVE_INTERVAL = 600   # 10 минут (в секундах)
 
 STATE_FILE = "bot_state.pkl"
 
@@ -69,7 +76,23 @@ def save_state(state):
         pass
 
 
-def send_vk_message(text):
+def send_vk_message_to_admin(text):
+    """Отправляет сообщение только админу"""
+    try:
+        vk.messages.send(
+            user_id=ADMIN_ID,
+            random_id=get_random_id(),
+            message=text
+        )
+        print(f"   ✅ Отправлено админу {ADMIN_ID}")
+        return True
+    except Exception as e:
+        print(f"   ❌ Ошибка отправки админу: {e}")
+        return False
+
+
+def send_vk_message_to_all(text):
+    """Отправляет сообщение ВСЕМ пользователям из списка"""
     success_count = 0
     fail_count = 0
     for user_id in USER_IDS:
@@ -176,6 +199,11 @@ def get_random_delay():
     return random.randint(MIN_CHECK_INTERVAL, MAX_CHECK_INTERVAL)
 
 
+def get_random_alive_interval():
+    """Возвращает случайное время от 5 до 10 минут"""
+    return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
+
+
 def check_rate_once():
     """Одна проверка курса с очисткой данных"""
     driver = None
@@ -207,7 +235,6 @@ def check_rate_once():
         html = driver.page_source
         print(f"📄 HTML получен, длина: {len(html)}")
         
-        # --- ОЧИЩАЕМ СТАРЫЕ ДАННЫЕ ---
         clear_browser_data(driver)
         
         return parse_rate_from_html(html)
@@ -229,7 +256,8 @@ def main():
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
-    print(f"📱 Получателей: {len(USER_IDS)}")
+    print(f"📱 Админ (получает 'Бот жив'): {ADMIN_ID}")
+    print(f"📱 Получатели уведомлений: {USER_IDS}")
     print("=" * 60)
     print("📊 УСЛОВИЯ ДЛЯ УВЕДОМЛЕНИЯ (ХОТЯ БЫ ОДНО):")
     print(f"   1️⃣ Покупка должна быть НИЖЕ {BUY_THRESHOLD}")
@@ -238,11 +266,13 @@ def main():
     print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
     print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
     print("=" * 60)
-    print("💚 Сообщение 'Бот жив' будет приходить КАЖДЫЕ 5 МИНУТ")
-    print("🗑️ Очистка кэша и куки при каждой проверке")
+    print(f"💚 Сообщение 'Бот жив' будет приходить СЛУЧАЙНО от 5 до 10 минут")
+    print("📢 Уведомления о курсе получают ВСЕ пользователи")
     print("=" * 60)
 
     last_notification_time = 0
+    next_alive_interval = get_random_alive_interval()  # Первый случайный интервал
+    print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
     state = load_state()
     first_start_done = state.get("first_start_done", False)
@@ -256,10 +286,10 @@ def main():
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
             f"🔴 Продажа: выше {SELL_THRESHOLD}"
         )
-        send_vk_message(start_message)
+        send_vk_message_to_admin(start_message)
         state["first_start_done"] = True
         save_state(state)
-        print("💚 Отправлено сообщение о запуске бота (первый и единственный раз)")
+        print("💚 Отправлено сообщение о запуске бота (только админу)")
 
     while True:
         try:
@@ -273,15 +303,15 @@ def main():
 
                 current_time = time.time()
                 
-                # --- "БОТ ЖИВ" КАЖДЫЕ 5 МИНУТ ---
-                if current_time - last_alive_time >= ALIVE_INTERVAL:
+                # --- "БОТ ЖИВ" ТОЛЬКО АДМИНУ (случайно от 5 до 10 минут) ---
+                if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
                     state["alive_count"] = alive_count
                     save_state(state)
                     
                     alive_message = (
-                        f"✅ Бот жив и работает! (каждые 5 минут)\n"
+                        f"✅ Бот жив и работает! (от 5 до 10 минут)\n"
                         f"\n"
                         f"📊 Проверок: {update_count}\n"
                         f"🟢 Покупка: {buy_rate} => 100 оск.\n"
@@ -289,9 +319,13 @@ def main():
                         f"\n"
                         f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                     )
-                    send_vk_message(alive_message)
+                    send_vk_message_to_admin(alive_message)
                     last_alive_time = current_time
-                    print(f"💚 Отправлено сообщение о жизни бота (#{alive_count})")
+                    
+                    # Генерируем новый случайный интервал для следующего сообщения
+                    next_alive_interval = get_random_alive_interval()
+                    print(f"💚 Отправлено сообщение о жизни бота админу (#{alive_count})")
+                    print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
                 if buy_rate and sell_rate:
                     conditions_met = check_conditions(buy_rate, sell_rate)
@@ -312,7 +346,7 @@ def main():
                                 f"🔴 Продажа: 100 => {sell_rate} оск."
                             )
 
-                            send_vk_message(message)
+                            send_vk_message_to_all(message)
                             last_notification_time = current_time
                             print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
                         else:
