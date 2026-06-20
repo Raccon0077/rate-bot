@@ -113,11 +113,11 @@ def parse_rate_from_html(html):
     buy_rate = None
     sell_rate = None
     
-    # --- 1. Ищем в блоке program_chat ---
-    chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+    # --- 1. Ищем в блоке program_chat (берём ТРЕТЬЕ число в строке продажи) ---
+    chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html, re.DOTALL)
     if chat_match:
         buy_rate = int(chat_match.group(1))
-        sell_rate = int(chat_match.group(2))
+        sell_rate = int(chat_match.group(3))  # Третье число = продажа
         print(f"✅ Найден курс (chat): покупка {buy_rate}, продажа {sell_rate}")
         return buy_rate, sell_rate
     
@@ -129,6 +129,27 @@ def parse_rate_from_html(html):
         buy_rate = int(buy_match.group(1))
         sell_rate = int(sell_match.group(1))
         print(f"✅ Найден курс (прямой): покупка {buy_rate}, продажа {sell_rate}")
+        return buy_rate, sell_rate
+    
+    # --- 3. Ищем в тексте ---
+    text = re.sub(r'<[^>]+>', ' ', html)
+    lines = text.split('\n')
+    buy_rate = None
+    sell_rate = None
+    
+    for line in lines:
+        if 'Покупка' in line and '=>' in line:
+            nums = re.findall(r'\b([0-9]+)\b', line)
+            if nums:
+                buy_rate = int(nums[0])
+        if 'Продажа' in line and '=>' in line:
+            nums = re.findall(r'\b([0-9]+)\b', line)
+            if len(nums) >= 2:
+                sell_rate = int(nums[1])
+                print(f"   Найдена продажа (текст): {sell_rate}")
+    
+    if buy_rate and sell_rate:
+        print(f"✅ Найден курс (текст): покупка {buy_rate}, продажа {sell_rate}")
         return buy_rate, sell_rate
     
     return None, None
@@ -243,7 +264,6 @@ def main():
                 
                 buy_rate, sell_rate = parse_rate_from_html(html)
 
-                # --- ПРОВЕРКА: что на самом деле в переменных ---
                 print(f"🔴 ПРОВЕРКА: buy_rate={buy_rate}, sell_rate={sell_rate}")
 
                 if buy_rate and sell_rate:
