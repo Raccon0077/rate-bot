@@ -20,11 +20,10 @@ print("🚀 Бот запускается...")
 GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgnXYGZYYm_h0SQBhy71_5AG5HcIb3csegaBnks_1PweRiC20t5Im-hfbhkZnVNykMmFJBEbzPZ52WoJWzXPPZYXwa1_wJfxmtfmd86W7OcBSMuK2AGCYsJO97g6MB5pPhLRYJVE_KFBO9lK0JpfeiPPy9aRSg"
 
 # --- ПОЛУЧАТЕЛИ ---
-ADMIN_ID = 212887447  # Главный пользователь (получает "Бот запущен" и "Бот жив")
+ADMIN_ID = 212887447
 USER_IDS = [
     212887447,
     145156004,
-    # Добавляйте других пользователей, которые получают уведомления о курсе
 ]
 
 BUY_THRESHOLD = 50000
@@ -32,13 +31,10 @@ SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
-# --- ИНТЕРВАЛЫ ---
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 13
-
-# --- "БОТ ЖИВ" — СЛУЧАЙНО ОТ 5 ДО 10 МИНУТ ---
-MIN_ALIVE_INTERVAL = 300   # 5 минут (в секундах)
-MAX_ALIVE_INTERVAL = 600   # 10 минут (в секундах)
+MIN_ALIVE_INTERVAL = 300
+MAX_ALIVE_INTERVAL = 600
 
 STATE_FILE = "bot_state.pkl"
 
@@ -56,6 +52,7 @@ except Exception as e:
 update_count = 0
 notification_count = 0
 last_alive_time = time.time()
+last_notification_time = 0
 
 
 def load_state():
@@ -77,7 +74,6 @@ def save_state(state):
 
 
 def send_vk_message_to_admin(text):
-    """Отправляет сообщение только админу"""
     try:
         vk.messages.send(
             user_id=ADMIN_ID,
@@ -92,7 +88,6 @@ def send_vk_message_to_admin(text):
 
 
 def send_vk_message_to_all(text):
-    """Отправляет сообщение ВСЕМ пользователям из списка"""
     success_count = 0
     fail_count = 0
     for user_id in USER_IDS:
@@ -138,19 +133,16 @@ def get_driver():
 
 
 def clear_browser_data(driver):
-    """Очищает кэш и куки браузера"""
     try:
         driver.delete_all_cookies()
         print("   🗑️ Куки удалены")
     except:
         pass
-    
     try:
         driver.execute_script("window.localStorage.clear();")
         print("   🗑️ LocalStorage очищен")
     except:
         pass
-    
     try:
         driver.execute_script("window.sessionStorage.clear();")
         print("   🗑️ SessionStorage очищен")
@@ -188,7 +180,11 @@ def parse_rate_from_html(html):
 
 
 def check_conditions(buy_rate, sell_rate):
-    return buy_rate < BUY_THRESHOLD or sell_rate > SELL_THRESHOLD
+    buy_condition = buy_rate < BUY_THRESHOLD
+    sell_condition = sell_rate > SELL_THRESHOLD
+    result = buy_condition or sell_condition
+    print(f"   📋 Проверка условий: покупка {buy_rate} < {BUY_THRESHOLD} = {buy_condition}, продажа {sell_rate} > {SELL_THRESHOLD} = {sell_condition}, результат: {result}")
+    return result
 
 
 def get_notification_interval(notification_count):
@@ -200,12 +196,10 @@ def get_random_delay():
 
 
 def get_random_alive_interval():
-    """Возвращает случайное время от 5 до 10 минут"""
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
 
 
 def check_rate_once():
-    """Одна проверка курса с очисткой данных"""
     driver = None
     try:
         driver = get_driver()
@@ -252,27 +246,17 @@ def check_rate_once():
 
 
 def main():
-    global update_count, notification_count, last_alive_time
+    global update_count, notification_count, last_alive_time, last_notification_time
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
-    print(f"📱 Админ (получает 'Бот жив'): {ADMIN_ID}")
-    print(f"📱 Получатели уведомлений: {USER_IDS}")
+    print(f"📱 Админ: {ADMIN_ID}")
+    print(f"📱 Получатели: {USER_IDS}")
     print("=" * 60)
-    print("📊 УСЛОВИЯ ДЛЯ УВЕДОМЛЕНИЯ (ХОТЯ БЫ ОДНО):")
-    print(f"   1️⃣ Покупка должна быть НИЖЕ {BUY_THRESHOLD}")
-    print(f"   2️⃣ Продажа должна быть ВЫШЕ {SELL_THRESHOLD}")
+    print("📊 УСЛОВИЯ (ИЛИ):")
+    print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
+    print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
-    print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
-    print("=" * 60)
-    print(f"💚 Сообщение 'Бот жив' будет приходить СЛУЧАЙНО от 5 до 10 минут")
-    print("📢 Уведомления о курсе получают ВСЕ пользователи")
-    print("=" * 60)
-
-    last_notification_time = 0
-    next_alive_interval = get_random_alive_interval()  # Первый случайный интервал
-    print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
     state = load_state()
     first_start_done = state.get("first_start_done", False)
@@ -291,6 +275,9 @@ def main():
         save_state(state)
         print("💚 Отправлено сообщение о запуске бота (только админу)")
 
+    next_alive_interval = get_random_alive_interval()
+    print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
+
     while True:
         try:
             print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
@@ -303,7 +290,7 @@ def main():
 
                 current_time = time.time()
                 
-                # --- "БОТ ЖИВ" ТОЛЬКО АДМИНУ (случайно от 5 до 10 минут) ---
+                # "БОТ ЖИВ" — только админу
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -311,7 +298,7 @@ def main():
                     save_state(state)
                     
                     alive_message = (
-                        f"✅ Бот жив и работает! (от 5 до 10 минут)\n"
+                        f"✅ Бот жив и работает!\n"
                         f"\n"
                         f"📊 Проверок: {update_count}\n"
                         f"🟢 Покупка: {buy_rate} => 100 оск.\n"
@@ -321,15 +308,13 @@ def main():
                     )
                     send_vk_message_to_admin(alive_message)
                     last_alive_time = current_time
-                    
-                    # Генерируем новый случайный интервал для следующего сообщения
                     next_alive_interval = get_random_alive_interval()
-                    print(f"💚 Отправлено сообщение о жизни бота админу (#{alive_count})")
-                    print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
+                    print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
+                    print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
                 if buy_rate and sell_rate:
+                    # ПРОВЕРКА УСЛОВИЙ
                     conditions_met = check_conditions(buy_rate, sell_rate)
-                    print(f"📋 Условия: Покупка {buy_rate} < {BUY_THRESHOLD} = {buy_rate < BUY_THRESHOLD}, Продажа {sell_rate} > {SELL_THRESHOLD} = {sell_rate > SELL_THRESHOLD}")
                     
                     if conditions_met:
                         notification_count += 1
@@ -354,6 +339,8 @@ def main():
                             print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
                     else:
                         print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
+                else:
+                    print("⚠️ Не все данные получены (buy_rate или sell_rate отсутствуют)")
             else:
                 print("❌ Не удалось получить курс")
 
