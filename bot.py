@@ -4,6 +4,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 print("🚀 Бот запускается...")
@@ -27,23 +29,47 @@ try:
     driver.get(APP_URL)
     time.sleep(5)
     
-    print("🔄 Нажимаем 'Узнать курс'...")
+    # --- ИЩЕМ КНОПКИ ПО РАЗНЫМ СЕЛЕКТОРАМ ---
+    print("🔄 Ищем кнопки...")
+    
+    # Способ 1: По тексту
     try:
         learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
         learn_btn.click()
-        print("   ✅ Нажата кнопка 'Узнать курс'")
+        print("   ✅ Нажата кнопка 'Узнать курс' (по тексту)")
         time.sleep(3)
-    except Exception as e:
-        print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+    except:
+        print("   ⚠️ Кнопка 'Узнать курс' не найдена по тексту")
     
-    print("🔄 Нажимаем 'Обновить курс'...")
+    # Способ 2: По классу
+    try:
+        buttons = driver.find_elements(By.CLASS_NAME, "btn-default")
+        for btn in buttons:
+            if 'Узнать' in btn.text or 'узнать' in btn.text:
+                btn.click()
+                print("   ✅ Нажата кнопка 'Узнать курс' (по классу)")
+                time.sleep(3)
+                break
+    except:
+        print("   ⚠️ Кнопка 'Узнать курс' не найдена по классу")
+    
+    # Способ 3: По атрибуту onclick
+    try:
+        learn_btn = driver.find_element(By.CSS_SELECTOR, "[onclick*='run_program']")
+        learn_btn.click()
+        print("   ✅ Нажата кнопка 'Узнать курс' (по onclick)")
+        time.sleep(3)
+    except:
+        print("   ⚠️ Кнопка 'Узнать курс' не найдена по onclick")
+    
+    # --- ТЕПЕРЬ НАЖИМАЕМ "ОБНОВИТЬ КУРС" ---
     try:
         update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
         update_btn.click()
         print("   ✅ Нажата кнопка 'Обновить курс'")
         time.sleep(3)
-    except Exception as e:
-        print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+    except:
+        print("   ⚠️ Кнопка 'Обновить курс' не найдена")
     
     print("📄 Сохраняем HTML...")
     html = driver.page_source
@@ -55,48 +81,34 @@ try:
     
     print("🔍 Ищем курс...")
     
-    # --- УНИВЕРСАЛЬНЫЙ ПАРСИНГ ---
-    # Ищем все числа в тексте
-    all_numbers = re.findall(r'\b([0-9]{4,6})\b', html)
-    print(f"🔢 Все найдены числа: {all_numbers[:20]}")
-    
-    # Ищем слова "Покупка" и "Продажа" (с учётом экранирования)
+    # --- ИЩЕМ В HTML ---
     if 'Покупка' in html:
-        print("✅ Найдено слово 'Покупка'")
         pos = html.find('Покупка')
-        print(f"   Окрестности: {html[pos:pos+150]}")
+        print(f"✅ 'Покупка' найдена: {html[pos:pos+200]}")
+        
+        # Парсим покупку
+        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+        if buy_match:
+            buy_rate = int(buy_match.group(1))
+            print(f"   Покупка: {buy_rate}")
     else:
-        print("❌ 'Покупка' не найдена")
+        print("❌ 'Покупка' НЕ найдена")
     
     if 'Продажа' in html:
-        print("✅ Найдено слово 'Продажа'")
         pos = html.find('Продажа')
-        print(f"   Окрестности: {html[pos:pos+150]}")
+        print(f"✅ 'Продажа' найдена: {html[pos:pos+200]}")
+        
+        # Парсим продажу
+        sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+        if sell_match:
+            sell_rate = int(sell_match.group(1))
+            print(f"   Продажа: {sell_rate}")
     else:
-        print("❌ 'Продажа' не найдена")
+        print("❌ 'Продажа' НЕ найдена")
     
-    # --- ПАРСИМ КУРС (независимо от формата) ---
-    buy_rate = None
-    sell_rate = None
-    
-    # Ищем покупку: ищем слово "Покупка" и ближайшее число
-    buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-    if buy_match:
-        buy_rate = int(buy_match.group(1))
-        print(f"✅ Найдена покупка: {buy_rate}")
-    
-    # Ищем продажу: ищем слово "Продажа" и число ПОСЛЕ "=>"
-    sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
-    if sell_match:
-        sell_rate = int(sell_match.group(1))
-        print(f"✅ Найдена продажа: {sell_rate}")
-    
-    if buy_rate and sell_rate:
-        print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
-    else:
-        print("❌ КУРС НЕ НАЙДЕН")
-        print(f"   buy_rate: {buy_rate}")
-        print(f"   sell_rate: {sell_rate}")
+    # --- ВЫВОДИМ ВСЕ ЧИСЛА ---
+    numbers = re.findall(r'\b([0-9]{4,6})\b', html)
+    print(f"🔢 Все числа: {numbers[:20]}")
     
 except Exception as e:
     print(f"❌ Ошибка: {e}")
