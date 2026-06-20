@@ -36,7 +36,7 @@ STATE_FILE = "bot_state.pkl"
 
 print("📌 Настройки загружены")
 
-# --- ИНИЦИАЛИЗАЦИЯ VK ---
+# --- ИНИЦИАЛИЗАЦИЯ VK --
 try:
     vk_session = vk_api.VkApi(token=GROUP_TOKEN)
     vk = vk_session.get_api()
