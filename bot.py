@@ -34,6 +34,9 @@ MAX_CHECK_INTERVAL = 13
 
 STATE_FILE = "bot_state.pkl"
 
+# --- ИНТЕРВАЛ "БОТ ЖИВ" (15 МИНУТ) ---
+ALIVE_INTERVAL = 900  # 15 минут в секундах
+
 print("📌 Настройки загружены")
 
 # --- ИНИЦИАЛИЗАЦИЯ VK ---
@@ -88,7 +91,6 @@ def send_vk_message(text):
 
 
 def get_driver():
-    """Создаёт драйвер Chrome с headless-настройками для сервера"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -120,20 +122,52 @@ def parse_rate_from_html(html):
         buy_rate = int(buy_match.group(1))
         print(f"   Найдена покупка: {buy_rate}")
     
-    # Ищем продажу: "Продажа: 💎100 => 🌕48987"
+    # Ищем продажу несколькими способами
+    # Способ 1: Продажа: 💎100 => 🌕54362
     sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
     if sell_match:
         sell_rate = int(sell_match.group(1))
-        print(f"   Найдена продажа: {sell_rate}")
+        print(f"   Найдена продажа (способ 1): {sell_rate}")
+    
+    # Способ 2: Ищем через chat блок
+    if not sell_rate:
+        chat_match = re.search(r'<div class="program_chat">.*?Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html, re.DOTALL)
+        if chat_match:
+            sell_rate = int(chat_match.group(2))
+            print(f"   Найдена продажа (способ 2): {sell_rate}")
+            if not buy_rate:
+                buy_match2 = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+                if buy_match2:
+                    buy_rate = int(buy_match2.group(1))
+                    print(f"   Найдена покупка (способ 2): {buy_rate}")
+    
+    # Способ 3: Ищем просто числа после "Продажа"
+    if not sell_rate:
+        sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+        if sell_match:
+            sell_rate = int(sell_match.group(1))
+            print(f"   Найдена продажа (способ 3): {sell_rate}")
+    
+    # Способ 4: Ищем в тексте без тегов
+    if not sell_rate:
+        text = re.sub(r'<[^>]+>', ' ', html)
+        lines = text.split('\n')
+        for line in lines:
+            if 'Продажа' in line and '=>' in line:
+                nums = re.findall(r'\b([0-9]+)\b', line)
+                if len(nums) >= 2:
+                    sell_rate = int(nums[1])
+                    print(f"   Найдена продажа (способ 4): {sell_rate}")
+                    if not buy_rate:
+                        for line2 in lines:
+                            if 'Покупка' in line2 and '=>' in line2:
+                                nums2 = re.findall(r'\b([0-9]+)\b', line2)
+                                if nums2:
+                                    buy_rate = int(nums2[0])
+                                    print(f"   Найдена покупка (способ 4): {buy_rate}")
+                    break
     
     if buy_rate and sell_rate:
-        return buy_rate, sell_rate
-    
-    # Способ 2: Ищем в блоке program_chat
-    chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-    if chat_match:
-        buy_rate = int(chat_match.group(1))
-        sell_rate = int(chat_match.group(2))
         return buy_rate, sell_rate
     
     return None, None
@@ -167,7 +201,7 @@ def main():
     print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
     print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} секунд")
     print("=" * 60)
-    print("💚 Сообщение 'Бот жив' будет приходить раз в час")
+    print(f"💚 Сообщение 'Бот жив' будет приходить каждые 15 минут")
     print("=" * 60)
 
     last_notification_time = 0
@@ -189,7 +223,6 @@ def main():
         save_state(state)
         print("💚 Отправлено сообщение о запуске бота (первый и единственный раз)")
 
-    # --- ЗАПУСКАЕМ БРАУЗЕР ОДИН РАЗ ---
     print("\n🌐 Запускаем браузер (он останется открытым)...")
     driver = get_driver()
     
@@ -222,7 +255,6 @@ def main():
             try:
                 print(f"⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
                 
-                # --- ОБНОВЛЯЕМ СТРАНИЦУ И НАЖИМАЕМ КНОПКИ ---
                 print("🔄 Обновляем страницу...")
                 driver.refresh()
                 time.sleep(2)
@@ -245,19 +277,18 @@ def main():
                 except Exception as e:
                     print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
                 
-                # --- ПОЛУЧАЕМ HTML ---
                 html = driver.page_source
                 print(f"📄 HTML получен, длина: {len(html)}")
                 
-                # --- ПАРСИМ КУРС ---
                 buy_rate, sell_rate = parse_rate_from_html(html)
 
                 if buy_rate and sell_rate:
                     update_count += 1
                     print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
 
+                    # --- ОТПРАВКА "БОТ ЖИВ" КАЖДЫЕ 15 МИНУТ ---
                     current_time = time.time()
-                    if current_time - last_alive_time >= 3600:
+                    if current_time - last_alive_time >= ALIVE_INTERVAL:  # 900 секунд = 15 минут
                         alive_count += 1
                         state = load_state()
                         state["alive_count"] = alive_count
