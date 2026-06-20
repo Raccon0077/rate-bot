@@ -17,12 +17,12 @@ from webdriver_manager.chrome import ChromeDriverManager
 print("🚀 Бот запускается...")
 
 # --- НАСТРОЙКИ ---
-GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgnXYGZYYm_h0SQBhy71_5AG5HcIb3csegaBnks_1PweRiC20t5Im-hfbhkZnVNykMmFJBEbzPZ52WoJWzXPPZYXwa1_wJfxmtfmd86W7OcBSMuK2AGCYsJO97g6MB5pPhLRYJVE_KFBO9lK0JpfeiPPy9aRSg"
+GROUP_TOKEN = "vk1.a.MhgbLlQmw_TqtPUfFlUpXKNc7VGyn8GTFmhnFUlZLUXfVylf14sIxf9tdbqpzrrexoEBd5Jwa8vxKZ28DrsroeFsMX7FP3W-1mQSRnGQmukdl83ippgTsX4eaQ-MdnTnzkZWTBZ-fKPDOXzb-azjiMVXHoi8W5EXK2I2XjLbBeGQue6-W3AfW4R1EnpdQwC4Bmdqt9zppplECNU2fKdobQ"
+
 USER_IDS = [
     212887447,
     145156004,
 ]
-
 
 BUY_THRESHOLD = 70000
 SELL_THRESHOLD = 60000
@@ -113,32 +113,35 @@ def parse_rate_from_html(html):
     buy_rate = None
     sell_rate = None
     
-    # --- ИЩЕМ ПОКУПКУ ---
+    # --- ПОКУПКА ---
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
     if buy_match:
         buy_rate = int(buy_match.group(1))
         print(f"   Покупка: {buy_rate}")
     
-    # --- ИЩЕМ ПРОДАЖУ ---
-    # Ищем все числа после "Продажа" и берём последнее
-    sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
+    # --- ПРОДАЖА (точный поиск) ---
+    # Ищем "Продажа: 💎100 => 🌕46168"
+    # или "Продажа: 💎100 =&gt; 🌕46168"
+    sell_match = re.search(r'Продажа[^0-9]*💎100[^0-9]*=>?[^0-9]*🌕([0-9]+)', html)
     if sell_match:
-        sell_rate = int(sell_match.group(2))
-        print(f"   Продажа: {sell_rate}")
-    else:
-        # Если не нашлось, ищем просто числа после "Продажа"
-        sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
+        sell_rate = int(sell_match.group(1))
+        print(f"   Продажа (точный): {sell_rate}")
+    
+    # Если не нашли, пробуем упрощённый вариант
+    if not sell_rate:
+        sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
         if sell_match:
-            # Берём первое число (это 100), но нам нужно второе
-            # Поэтому ищем второе число в строке
-            text = sell_match.group(0)
-            nums = re.findall(r'\b([0-9]+)\b', text)
-            if len(nums) >= 2:
-                sell_rate = int(nums[1])
-                print(f"   Продажа (альт): {sell_rate}")
+            sell_rate = int(sell_match.group(1))
+            print(f"   Продажа (упрощ.): {sell_rate}")
     
     if buy_rate and sell_rate:
+        print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
         return buy_rate, sell_rate
+    
+    # Если продажа не найдена, возвращаем только покупку
+    if buy_rate:
+        print(f"⚠️ Найдена только покупка: {buy_rate}")
+        return buy_rate, 0
     
     return None, None
 
@@ -252,7 +255,7 @@ def main():
                 
                 buy_rate, sell_rate = parse_rate_from_html(html)
 
-                if buy_rate and sell_rate:
+                if buy_rate is not None and sell_rate is not None:
                     update_count += 1
                     print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
 
@@ -276,7 +279,6 @@ def main():
 
                     conditions_met = check_conditions(buy_rate, sell_rate)
                     print(f"📋 Условия: Покупка {buy_rate} < {BUY_THRESHOLD} = {buy_rate < BUY_THRESHOLD}, Продажа {sell_rate} > {SELL_THRESHOLD} = {sell_rate > SELL_THRESHOLD}")
-                    print(f"📋 Результат: {'✅ ВЫПОЛНЕНЫ' if conditions_met else '❌ НЕ ВЫПОЛНЕНЫ'}")
                     
                     if conditions_met:
                         notification_count += 1
