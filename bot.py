@@ -20,10 +20,12 @@ print("🚀 Бот запускается...")
 GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgnXYGZYYm_h0SQBhy71_5AG5HcIb3csegaBnks_1PweRiC20t5Im-hfbhkZnVNykMmFJBEbzPZ52WoJWzXPPZYXwa1_wJfxmtfmd86W7OcBSMuK2AGCYsJO97g6MB5pPhLRYJVE_KFBO9lK0JpfeiPPy9aRSg"
 
 # --- ПОЛУЧАТЕЛИ ---
-ADMIN_ID = 212887447
+ADMIN_ID = 212887447  # Только этот пользователь получает "Бот жив"
 USER_IDS = [
     212887447,
-
+    145156004,
+    816395698,
+    459341710,
 ]
 
 BUY_THRESHOLD = 50000
@@ -38,11 +40,12 @@ NORMAL_CHECK_INTERVAL = 5
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 10
 
-# --- МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ ---
-NOTIFICATION_INTERVAL = 1  # 1 секунда (можно поставить 0)
+# --- "БОТ ЖИВ" — 5-10 МИНУТ (ТОЛЬКО АДМИНУ) ---
+MIN_ALIVE_INTERVAL = 300   # 5 минут
+MAX_ALIVE_INTERVAL = 600   # 10 минут
 
-MIN_ALIVE_INTERVAL = 300
-MAX_ALIVE_INTERVAL = 600
+# --- МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ ---
+NOTIFICATION_INTERVAL = 1
 
 STATE_FILE = "bot_state.pkl"
 
@@ -84,6 +87,7 @@ def save_state(state):
 
 
 def send_vk_message_to_admin(text):
+    """Отправляет сообщение ТОЛЬКО админу"""
     try:
         vk.messages.send(
             user_id=ADMIN_ID,
@@ -98,6 +102,7 @@ def send_vk_message_to_admin(text):
 
 
 def send_vk_message_to_all(text):
+    """Отправляет сообщение ВСЕМ пользователям"""
     success_count = 0
     fail_count = 0
     for user_id in USER_IDS:
@@ -202,6 +207,7 @@ def get_random_delay():
 
 
 def get_random_alive_interval():
+    """Возвращает случайное время от 5 до 10 минут (в секундах)"""
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
 
 
@@ -222,14 +228,14 @@ def check_rate_once():
         
         print("🌐 Открываем страницу...")
         driver.get(APP_URL)
-        time.sleep(2)  # Уменьшено с 3 до 2
+        time.sleep(2)
         
         print("🔄 Нажимаем 'Узнать курс'...")
         try:
             learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
             learn_btn.click()
             print("   ✅ Нажата кнопка 'Узнать курс'")
-            time.sleep(1)  # Уменьшено с 2 до 1
+            time.sleep(1)
         except Exception as e:
             print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
         
@@ -238,7 +244,7 @@ def check_rate_once():
             update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
             update_btn.click()
             print("   ✅ Нажата кнопка 'Обновить курс'")
-            time.sleep(0.5)  # Уменьшено с 2 до 0.5 (ГЛАВНОЕ ИЗМЕНЕНИЕ!)
+            time.sleep(0.5)
         except Exception as e:
             print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
         
@@ -266,8 +272,8 @@ def main():
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
-    print(f"📱 Админ: {ADMIN_ID}")
-    print(f"📱 Получатели: {USER_IDS}")
+    print(f"📱 Админ (получает 'Бот жив'): {ADMIN_ID}")
+    print(f"📱 Получатели уведомлений: {USER_IDS}")
     print("=" * 60)
     print("📊 УСЛОВИЯ (ИЛИ):")
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
@@ -277,7 +283,8 @@ def main():
     print(f"   - При выгодном курсе: 3 сек (первые 3 раза), затем 5 сек")
     print(f"   - При обычном курсе: случайно {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print("=" * 60)
-    print(f"📢 МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ: {NOTIFICATION_INTERVAL} сек")
+    print(f"📢 'Бот жив' — ТОЛЬКО АДМИНУ, каждые 5-10 минут")
+    print(f"📢 Уведомления о курсе — ВСЕМ пользователям")
     print("=" * 60)
 
     state = load_state()
@@ -324,7 +331,7 @@ def main():
 
                 current_time = time.time()
                 
-                # "БОТ ЖИВ" — только админу
+                # --- "БОТ ЖИВ" — ТОЛЬКО АДМИНУ (каждые 5-10 минут) ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -346,12 +353,12 @@ def main():
                     print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
                     print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
+                # --- УВЕДОМЛЕНИЯ О ВЫГОДНОМ КУРСЕ — ВСЕМ ПОЛЬЗОВАТЕЛЯМ ---
                 if buy_rate and sell_rate:
                     if is_profitable:
                         notification_count += 1
                         print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
 
-                        # --- МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ ---
                         current_time = time.time()
                         if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
                             message = (
