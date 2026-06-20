@@ -23,16 +23,24 @@ GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgn
 ADMIN_ID = 212887447
 USER_IDS = [
     212887447,
-  
+
 ]
 
-BUY_THRESHOLD = 70000
+BUY_THRESHOLD = 50000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
+# --- АДАПТИВНЫЕ ИНТЕРВАЛЫ ---
+FAST_CHECK_TIMES = 3
+FAST_CHECK_INTERVAL = 3
+NORMAL_CHECK_INTERVAL = 5
 MIN_CHECK_INTERVAL = 5
-MAX_CHECK_INTERVAL = 13
+MAX_CHECK_INTERVAL = 10
+
+# --- МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ ---
+NOTIFICATION_INTERVAL = 1  # 1 секунда (можно поставить 0)
+
 MIN_ALIVE_INTERVAL = 300
 MAX_ALIVE_INTERVAL = 600
 
@@ -53,6 +61,8 @@ update_count = 0
 notification_count = 0
 last_alive_time = time.time()
 last_notification_time = 0
+fast_check_counter = 0
+was_profitable = False
 
 
 def load_state():
@@ -187,16 +197,22 @@ def check_conditions(buy_rate, sell_rate):
     return result
 
 
-def get_notification_interval(notification_count):
-    return 5 if notification_count < 2 else 10
-
-
 def get_random_delay():
     return random.randint(MIN_CHECK_INTERVAL, MAX_CHECK_INTERVAL)
 
 
 def get_random_alive_interval():
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
+
+
+def get_check_delay(is_profitable, fast_check_counter):
+    if is_profitable:
+        if fast_check_counter < FAST_CHECK_TIMES:
+            return FAST_CHECK_INTERVAL
+        else:
+            return NORMAL_CHECK_INTERVAL
+    else:
+        return get_random_delay()
 
 
 def check_rate_once():
@@ -206,14 +222,14 @@ def check_rate_once():
         
         print("🌐 Открываем страницу...")
         driver.get(APP_URL)
-        time.sleep(3)
+        time.sleep(2)  # Уменьшено с 3 до 2
         
         print("🔄 Нажимаем 'Узнать курс'...")
         try:
             learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
             learn_btn.click()
             print("   ✅ Нажата кнопка 'Узнать курс'")
-            time.sleep(2)
+            time.sleep(1)  # Уменьшено с 2 до 1
         except Exception as e:
             print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
         
@@ -222,7 +238,7 @@ def check_rate_once():
             update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
             update_btn.click()
             print("   ✅ Нажата кнопка 'Обновить курс'")
-            time.sleep(2)
+            time.sleep(0.5)  # Уменьшено с 2 до 0.5 (ГЛАВНОЕ ИЗМЕНЕНИЕ!)
         except Exception as e:
             print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
         
@@ -246,7 +262,7 @@ def check_rate_once():
 
 
 def main():
-    global update_count, notification_count, last_alive_time, last_notification_time
+    global update_count, notification_count, last_alive_time, last_notification_time, fast_check_counter, was_profitable
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
@@ -256,6 +272,12 @@ def main():
     print("📊 УСЛОВИЯ (ИЛИ):")
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
+    print("=" * 60)
+    print("📢 АДАПТИВНЫЕ ИНТЕРВАЛЫ ПРОВЕРКИ:")
+    print(f"   - При выгодном курсе: 3 сек (первые 3 раза), затем 5 сек")
+    print(f"   - При обычном курсе: случайно {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print("=" * 60)
+    print(f"📢 МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ: {NOTIFICATION_INTERVAL} сек")
     print("=" * 60)
 
     state = load_state()
@@ -286,6 +308,18 @@ def main():
 
             if buy_rate is not None:
                 update_count += 1
+                
+                is_profitable = check_conditions(buy_rate, sell_rate)
+
+                if is_profitable:
+                    if not was_profitable:
+                        fast_check_counter = 0
+                    fast_check_counter += 1
+                else:
+                    fast_check_counter = 0
+
+                was_profitable = is_profitable
+
                 print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate if sell_rate else 0}")
 
                 current_time = time.time()
@@ -313,17 +347,13 @@ def main():
                     print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
                 if buy_rate and sell_rate:
-                    # ПРОВЕРКА УСЛОВИЙ
-                    conditions_met = check_conditions(buy_rate, sell_rate)
-                    
-                    if conditions_met:
+                    if is_profitable:
                         notification_count += 1
                         print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
 
-                        current_interval = get_notification_interval(notification_count)
+                        # --- МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ ---
                         current_time = time.time()
-
-                        if current_time - last_notification_time >= current_interval:
+                        if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
                             message = (
                                 f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
                                 f"\n"
@@ -333,18 +363,28 @@ def main():
 
                             send_vk_message_to_all(message)
                             last_notification_time = current_time
-                            print(f"📊 Следующее уведомление через {get_notification_interval(notification_count)} сек")
+                            print(f"📊 Следующее уведомление через {NOTIFICATION_INTERVAL} сек")
                         else:
-                            wait_time = int(current_interval - (current_time - last_notification_time))
+                            wait_time = int(NOTIFICATION_INTERVAL - (current_time - last_notification_time))
                             print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
                     else:
                         print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
                 else:
-                    print("⚠️ Не все данные получены (buy_rate или sell_rate отсутствуют)")
+                    print("⚠️ Не все данные получены")
             else:
                 print("❌ Не удалось получить курс")
 
-            delay = get_random_delay()
+            # --- АДАПТИВНАЯ ЗАДЕРЖКА ---
+            delay = get_check_delay(is_profitable, fast_check_counter)
+            
+            if is_profitable:
+                if fast_check_counter <= FAST_CHECK_TIMES:
+                    print(f"⚡ Быстрая проверка #{fast_check_counter}/{FAST_CHECK_TIMES} (интервал {delay} сек)")
+                else:
+                    print(f"📊 Обычная проверка выгодного курса (интервал {delay} сек)")
+            else:
+                print(f"🐢 Обычная проверка (интервал {delay} сек)")
+            
             print(f"⏳ Следующая проверка через {delay} секунд...")
             time.sleep(delay)
 
