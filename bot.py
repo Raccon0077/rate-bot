@@ -48,23 +48,55 @@ try:
     print("📄 Сохраняем HTML...")
     html = driver.page_source
     
+    # --- СОХРАНЯЕМ HTML ДЛЯ ОТЛАДКИ ---
+    with open("debug.html", "w", encoding="utf-8") as f:
+        f.write(html)
+    print("📄 HTML сохранён в debug.html")
+    
     print("🔍 Ищем курс...")
     
-    # --- ПРАВИЛЬНЫЙ ПАРСИНГ ---
-    # Ищем покупку: первое число после слова "Покупка"
+    # --- УНИВЕРСАЛЬНЫЙ ПАРСИНГ ---
+    # Ищем все числа в тексте
+    all_numbers = re.findall(r'\b([0-9]{4,6})\b', html)
+    print(f"🔢 Все найдены числа: {all_numbers[:20]}")
+    
+    # Ищем слова "Покупка" и "Продажа" (с учётом экранирования)
+    if 'Покупка' in html:
+        print("✅ Найдено слово 'Покупка'")
+        pos = html.find('Покупка')
+        print(f"   Окрестности: {html[pos:pos+150]}")
+    else:
+        print("❌ 'Покупка' не найдена")
+    
+    if 'Продажа' in html:
+        print("✅ Найдено слово 'Продажа'")
+        pos = html.find('Продажа')
+        print(f"   Окрестности: {html[pos:pos+150]}")
+    else:
+        print("❌ 'Продажа' не найдена")
+    
+    # --- ПАРСИМ КУРС (независимо от формата) ---
+    buy_rate = None
+    sell_rate = None
+    
+    # Ищем покупку: ищем слово "Покупка" и ближайшее число
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-    
-    # Ищем продажу: число ПОСЛЕ "=>" в строке с "Продажа"
-    sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
-    
-    if buy_match and sell_match:
+    if buy_match:
         buy_rate = int(buy_match.group(1))
+        print(f"✅ Найдена покупка: {buy_rate}")
+    
+    # Ищем продажу: ищем слово "Продажа" и число ПОСЛЕ "=>"
+    sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+    if sell_match:
         sell_rate = int(sell_match.group(1))
+        print(f"✅ Найдена продажа: {sell_rate}")
+    
+    if buy_rate and sell_rate:
         print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
     else:
         print("❌ КУРС НЕ НАЙДЕН")
-        print(f"   buy_match: {buy_match.group(1) if buy_match else 'None'}")
-        print(f"   sell_match: {sell_match.group(1) if sell_match else 'None'}")
+        print(f"   buy_rate: {buy_rate}")
+        print(f"   sell_rate: {sell_rate}")
     
 except Exception as e:
     print(f"❌ Ошибка: {e}")
