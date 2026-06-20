@@ -4,8 +4,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 print("🚀 Бот запускается...")
@@ -53,8 +51,11 @@ try:
     print("🔍 Ищем курс...")
     
     # --- ПРАВИЛЬНЫЙ ПАРСИНГ ---
+    # Ищем покупку: первое число после слова "Покупка"
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-    sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
+    
+    # Ищем продажу: число ПОСЛЕ "=>" в строке с "Продажа"
+    sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
     
     if buy_match and sell_match:
         buy_rate = int(buy_match.group(1))
@@ -62,6 +63,8 @@ try:
         print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
     else:
         print("❌ КУРС НЕ НАЙДЕН")
+        print(f"   buy_match: {buy_match.group(1) if buy_match else 'None'}")
+        print(f"   sell_match: {sell_match.group(1) if sell_match else 'None'}")
     
 except Exception as e:
     print(f"❌ Ошибка: {e}")
