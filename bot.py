@@ -4,8 +4,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 print("🚀 Бот запускается...")
@@ -50,38 +48,33 @@ try:
     print("📄 Сохраняем HTML...")
     html = driver.page_source
     
-    # --- СОХРАНЯЕМ HTML ДЛЯ ОТЛАДКИ ---
-    with open("debug.html", "w", encoding="utf-8") as f:
-        f.write(html)
-    print("📄 HTML сохранён в debug.html")
-    
     print("🔍 Ищем курс...")
     
-    # --- УНИВЕРСАЛЬНЫЙ ПОИСК ---
-    # Ищем покупку
+    # --- ПАРСИМ ПОКУПКУ ---
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
     buy_rate = int(buy_match.group(1)) if buy_match else None
-    print(f"   buy_match: {buy_rate}")
+    print(f"   Покупка: {buy_rate}")
     
-    # Ищем продажу (БЕЗ ПРИВЯЗКИ К "100")
+    # --- ПАРСИМ ПРОДАЖУ ---
     sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
     if sell_match:
         sell_rate = int(sell_match.group(2))  # Берём второе число
-        print(f"   sell_match: {sell_rate}")
+        print(f"   Продажа: {sell_rate}")
     else:
-        # Если не нашлось, ищем просто числа после "Продажа"
+        # Если не нашлось, пробуем упрощённый поиск
         sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
         if sell_match:
             sell_rate = int(sell_match.group(1))
-            print(f"   sell_match (упрощённо): {sell_rate}")
+            print(f"   Продажа (упрощённо): {sell_rate}")
         else:
             sell_rate = None
-            print("   sell_match: None")
+            print("   Продажа: не найдена")
     
+    # --- ВЫВОД РЕЗУЛЬТАТА ---
     if buy_rate and sell_rate:
-        print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
+        print(f"\n✅ НАЙДЕН КУРС:\n   🟢 Покупка: {buy_rate} => 100 оск.\n   🔴 Продажа: 100 => {sell_rate} оск.\n")
     else:
-        print("❌ КУРС НЕ НАЙДЕН")
+        print("\n❌ КУРС НЕ НАЙДЕН")
         print(f"   buy_rate: {buy_rate}")
         print(f"   sell_rate: {sell_rate}")
     
