@@ -23,6 +23,7 @@ USER_IDS = [
     145156004,
 ]
 
+
 BUY_THRESHOLD = 70000
 SELL_THRESHOLD = 60000
 
@@ -108,7 +109,7 @@ def get_driver():
 
 
 def parse_rate_from_html(html):
-    """Парсит курс из HTML - МАКСИМАЛЬНО ГИБКИЙ ПОИСК"""
+    """Парсит курс из HTML"""
     buy_rate = None
     sell_rate = None
     
@@ -118,44 +119,27 @@ def parse_rate_from_html(html):
         buy_rate = int(buy_match.group(1))
         print(f"   Покупка: {buy_rate}")
     
-    # --- ИЩЕМ ПРОДАЖУ (максимально гибко) ---
-    # Способ 1: Ищем "Продажа: 💎100 => 🌕46168"
-    sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+    # --- ИЩЕМ ПРОДАЖУ ---
+    # Ищем все числа после "Продажа" и берём последнее
+    sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
     if sell_match:
-        sell_rate = int(sell_match.group(1))
-        print(f"   Продажа (сп.1): {sell_rate}")
-    
-    # Способ 2: Ищем "Продажа" и все числа, берём второе
-    if not sell_rate:
-        sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
+        sell_rate = int(sell_match.group(2))
+        print(f"   Продажа: {sell_rate}")
+    else:
+        # Если не нашлось, ищем просто числа после "Продажа"
+        sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
         if sell_match:
-            sell_rate = int(sell_match.group(2))
-            print(f"   Продажа (сп.2): {sell_rate}")
-    
-    # Способ 3: Ищем просто числа в строке с "Продажа"
-    if not sell_rate:
-        lines = html.split('\n')
-        for line in lines:
-            if 'Продажа' in line:
-                nums = re.findall(r'\b([0-9]+)\b', line)
-                if len(nums) >= 2:
-                    sell_rate = int(nums[1])
-                    print(f"   Продажа (сп.3): {sell_rate}")
-                    break
-    
-    # Способ 4: Ищем всё в блоке program_chat
-    if not buy_rate or not sell_rate:
-        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-        if chat_match:
-            buy_rate = int(chat_match.group(1))
-            sell_rate = int(chat_match.group(2))
-            print(f"   Продажа (сп.4 - chat): {sell_rate}")
+            # Берём первое число (это 100), но нам нужно второе
+            # Поэтому ищем второе число в строке
+            text = sell_match.group(0)
+            nums = re.findall(r'\b([0-9]+)\b', text)
+            if len(nums) >= 2:
+                sell_rate = int(nums[1])
+                print(f"   Продажа (альт): {sell_rate}")
     
     if buy_rate and sell_rate:
-        print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
         return buy_rate, sell_rate
     
-    print("❌ КУРС НЕ НАЙДЕН")
     return None, None
 
 
