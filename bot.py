@@ -36,7 +36,7 @@ STATE_FILE = "bot_state.pkl"
 
 print("📌 Настройки загружены")
 
-# --- ИНИЦИАЛИЗАЦИЯ VK --
+# --- ИНИЦИАЛИЗАЦИЯ VK ---
 try:
     vk_session = vk_api.VkApi(token=GROUP_TOKEN)
     vk = vk_session.get_api()
@@ -109,18 +109,54 @@ def get_driver():
 
 
 def parse_rate_from_html(html):
-    """Парсит курс из HTML - ФИНАЛЬНАЯ ВЕРСИЯ"""
+    """Парсит курс из HTML - МАКСИМАЛЬНО ГИБКИЙ ПОИСК"""
     buy_rate = None
     sell_rate = None
     
-    # --- Ищем в блоке program_chat ---
-    chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
-    if chat_match:
-        buy_rate = int(chat_match.group(1))
-        sell_rate = int(chat_match.group(2))
-        print(f"✅ Найден курс: покупка {buy_rate}, продажа {sell_rate}")
+    # --- ИЩЕМ ПОКУПКУ ---
+    buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+    if buy_match:
+        buy_rate = int(buy_match.group(1))
+        print(f"   Покупка: {buy_rate}")
+    
+    # --- ИЩЕМ ПРОДАЖУ (максимально гибко) ---
+    # Способ 1: Ищем "Продажа: 💎100 => 🌕46168"
+    sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+    if sell_match:
+        sell_rate = int(sell_match.group(1))
+        print(f"   Продажа (сп.1): {sell_rate}")
+    
+    # Способ 2: Ищем "Продажа" и все числа, берём второе
+    if not sell_rate:
+        sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
+        if sell_match:
+            sell_rate = int(sell_match.group(2))
+            print(f"   Продажа (сп.2): {sell_rate}")
+    
+    # Способ 3: Ищем просто числа в строке с "Продажа"
+    if not sell_rate:
+        lines = html.split('\n')
+        for line in lines:
+            if 'Продажа' in line:
+                nums = re.findall(r'\b([0-9]+)\b', line)
+                if len(nums) >= 2:
+                    sell_rate = int(nums[1])
+                    print(f"   Продажа (сп.3): {sell_rate}")
+                    break
+    
+    # Способ 4: Ищем всё в блоке program_chat
+    if not buy_rate or not sell_rate:
+        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+        if chat_match:
+            buy_rate = int(chat_match.group(1))
+            sell_rate = int(chat_match.group(2))
+            print(f"   Продажа (сп.4 - chat): {sell_rate}")
+    
+    if buy_rate and sell_rate:
+        print(f"✅ НАЙДЕН КУРС: покупка {buy_rate}, продажа {sell_rate}")
         return buy_rate, sell_rate
     
+    print("❌ КУРС НЕ НАЙДЕН")
     return None, None
 
 
