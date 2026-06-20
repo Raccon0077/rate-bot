@@ -29,7 +29,6 @@ try:
     driver.get(APP_URL)
     time.sleep(5)
     
-    # --- НАЖИМАЕМ КНОПКИ ---
     print("🔄 Нажимаем 'Узнать курс'...")
     try:
         learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
@@ -53,22 +52,9 @@ try:
     
     print("🔍 Ищем курс...")
     
-    # --- ИЩЕМ В HTML ---
-    if 'Покупка' in html:
-        pos = html.find('Покупка')
-        print(f"✅ 'Покупка' найдена: {html[pos:pos+200]}")
-    else:
-        print("❌ 'Покупка' НЕ найдена")
-    
-    if 'Продажа' in html:
-        pos = html.find('Продажа')
-        print(f"✅ 'Продажа' найдена: {html[pos:pos+200]}")
-    else:
-        print("❌ 'Продажа' НЕ найдена")
-    
-    # --- ПАРСИМ КУРС ---
+    # --- ПРАВИЛЬНЫЙ ПАРСИНГ ---
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-    sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
+    sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
     
     if buy_match and sell_match:
         buy_rate = int(buy_match.group(1))
