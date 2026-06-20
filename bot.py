@@ -109,11 +109,11 @@ def get_driver():
 
 
 def parse_rate_from_html(html):
-    """Парсит курс из HTML - ИЩЕТ ВСЮДУ"""
+    """Парсит курс из HTML"""
     buy_rate = None
     sell_rate = None
     
-    # --- 1. Ищем в блоке program_chat (самый надёжный) ---
+    # --- 1. Ищем в блоке program_chat ---
     chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
     if chat_match:
         buy_rate = int(chat_match.group(1))
@@ -131,37 +131,6 @@ def parse_rate_from_html(html):
         print(f"✅ Найден курс (прямой): покупка {buy_rate}, продажа {sell_rate}")
         return buy_rate, sell_rate
     
-    # --- 3. Ищем в тексте без тегов ---
-    text = re.sub(r'<[^>]+>', ' ', html)
-    lines = text.split('\n')
-    for line in lines:
-        if 'Покупка' in line and '=>' in line:
-            nums = re.findall(r'\b([0-9]+)\b', line)
-            if nums:
-                buy_rate = int(nums[0])
-                print(f"   Найдена покупка (текст): {buy_rate}")
-        if 'Продажа' in line and '=>' in line:
-            nums = re.findall(r'\b([0-9]+)\b', line)
-            if len(nums) >= 2:
-                sell_rate = int(nums[1])
-                print(f"   Найдена продажа (текст): {sell_rate}")
-    
-    if buy_rate and sell_rate:
-        print(f"✅ Найден курс (текст): покупка {buy_rate}, продажа {sell_rate}")
-        return buy_rate, sell_rate
-    
-    # --- 4. Последний шанс: ищем все числа в div program_chat ---
-    chat_div = re.search(r'<div class="program_chat">(.*?)</div>', html, re.DOTALL)
-    if chat_div:
-        chat_text = chat_div.group(1)
-        nums = re.findall(r'\b([0-9]+)\b', chat_text)
-        if len(nums) >= 2:
-            buy_rate = int(nums[0])
-            sell_rate = int(nums[1])
-            print(f"✅ Найден курс (div): покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-    
-    print("⚠️ Курс не найден")
     return None, None
 
 
@@ -273,6 +242,9 @@ def main():
                 print(f"📄 HTML получен, длина: {len(html)}")
                 
                 buy_rate, sell_rate = parse_rate_from_html(html)
+
+                # --- ПРОВЕРКА: что на самом деле в переменных ---
+                print(f"🔴 ПРОВЕРКА: buy_rate={buy_rate}, sell_rate={sell_rate}")
 
                 if buy_rate and sell_rate:
                     update_count += 1
