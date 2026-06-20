@@ -23,11 +23,10 @@ GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgn
 ADMIN_ID = 212887447
 USER_IDS = [
     212887447,
-    145156004,
-    816395698,
+  
 ]
 
-BUY_THRESHOLD = 50000
+BUY_THRESHOLD = 70000
 SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
