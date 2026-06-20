@@ -33,6 +33,7 @@ MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 13
 
 STATE_FILE = "bot_state.pkl"
+DEBUG_FILE = "debug.html"
 
 print("📌 Настройки загружены")
 
@@ -113,36 +114,44 @@ def parse_rate_from_html(html):
     buy_rate = None
     sell_rate = None
     
-    # Ищем покупку: "Покупка: 🌕65089 => 💎100"
+    # --- СОХРАНЯЕМ HTML ДЛЯ ОТЛАДКИ ---
+    try:
+        with open(DEBUG_FILE, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"📄 HTML сохранён в {DEBUG_FILE}")
+    except Exception as e:
+        print(f"⚠️ Не удалось сохранить HTML: {e}")
+    
+    # --- ИЩЕМ ПОКУПКУ ---
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*100', html)
     if buy_match:
         buy_rate = int(buy_match.group(1))
         print(f"   Найдена покупка: {buy_rate}")
     
-    # --- ГЛАВНОЕ ИСПРАВЛЕНИЕ: ищем продажу как ПОСЛЕДНЕЕ число ---
-    # Ищем строку с "Продажа" и берём ПОСЛЕДНЕЕ число в ней
-    sell_match = re.search(r'Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html)
+    # --- ИЩЕМ ПРОДАЖУ ---
+    # Способ 1: ищем "Продажа: 💎100 => 🌕XXXXX"
+    sell_match = re.search(r'Продажа[^0-9]*100[^0-9]*=>[^0-9]*([0-9]+)', html)
     if sell_match:
-        sell_rate = int(sell_match.group(2))  # Берём второе число (после =>)
+        sell_rate = int(sell_match.group(1))
         print(f"   Найдена продажа (сп.1): {sell_rate}")
     
-    # Если не нашли, ищем в блоке program_chat
+    # Способ 2: ищем в блоке program_chat
     if not sell_rate:
-        chat_match = re.search(r'<div class="program_chat">.*?Покупка[^0-9]*([0-9]+).*?Продажа[^0-9]*([0-9]+)', html, re.DOTALL)
+        chat_match = re.search(r'<div class="program_chat">.*?Продажа[^0-9]*([0-9]+)[^0-9]*=>[^0-9]*([0-9]+)', html, re.DOTALL)
         if chat_match:
-            buy_rate = int(chat_match.group(1))
             sell_rate = int(chat_match.group(2))
-            print(f"   Найдено через chat: покупка {buy_rate}, продажа {sell_rate}")
+            print(f"   Найдена продажа (сп.2): {sell_rate}")
     
-    # Если всё ещё не нашли, ищем все числа в строке с "Продажа"
+    # Способ 3: ищем в тексте без тегов
     if not sell_rate:
-        lines = html.split('\n')
+        text = re.sub(r'<[^>]+>', ' ', html)
+        lines = text.split('\n')
         for line in lines:
             if 'Продажа' in line and '=>' in line:
                 nums = re.findall(r'\b([0-9]+)\b', line)
                 if len(nums) >= 2:
-                    sell_rate = int(nums[1])  # Берём второе число
-                    print(f"   Найдена продажа (сп.2): {sell_rate}")
+                    sell_rate = int(nums[1])
+                    print(f"   Найдена продажа (сп.3): {sell_rate}")
                     break
     
     if buy_rate and sell_rate:
