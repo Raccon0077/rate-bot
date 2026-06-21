@@ -3,7 +3,6 @@ import re
 import pickle
 import os
 import random
-import psutil
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -33,26 +32,17 @@ SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
-# --- АДАПТИВНЫЕ ИНТЕРВАЛЫ ---
-FAST_CHECK_TIMES = 3
-FAST_CHECK_INTERVAL = 3
-NORMAL_CHECK_INTERVAL = 5
+# --- ИНТЕРВАЛЫ ---
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 10
-
-# --- УСКОРЕННАЯ РЕАКЦИЯ НА ПАДЕНИЕ ---
-CRASH_FAST_INTERVAL = 1
-CRASH_FAST_TIMES = 3
-
-# --- "БОТ ЖИВ" ---
+NOTIFICATION_INTERVAL = 1
 MIN_ALIVE_INTERVAL = 300
 MAX_ALIVE_INTERVAL = 600
 
-# --- УВЕДОМЛЕНИЯ ---
-NOTIFICATION_INTERVAL = 1
-
-# --- ОЧИСТКА ПАМЯТИ ---
-MEMORY_LIMIT_MB = 350
+# --- ОЧИСТКА ПАМЯТИ БЕЗ ПЕРЕЗАПУСКА ---
+CLEANUP_INTERVAL = 600  # 10 минут (600 секунд)
+# Или по количеству проверок:
+CLEANUP_CHECK_COUNT = 50  # Каждые 50 проверок
 
 STATE_FILE = "bot_state.pkl"
 
@@ -71,8 +61,8 @@ update_count = 0
 notification_count = 0
 last_alive_time = time.time()
 last_notification_time = 0
-fast_check_counter = 0
-was_profitable = False
+last_cleanup_time = time.time()
+last_cleanup_check = 0
 
 
 def load_state():
@@ -126,14 +116,6 @@ def send_vk_message_to_all(text):
     return success_count > 0
 
 
-def get_memory_usage():
-    try:
-        process = psutil.Process()
-        return process.memory_info().rss / 1024 / 1024
-    except:
-        return 0
-
-
 def get_driver():
     options = Options()
     options.add_argument("--headless")
@@ -161,6 +143,7 @@ def get_driver():
 
 
 def clear_browser_data(driver):
+    """Очищает куки и storage"""
     try:
         driver.delete_all_cookies()
         print("   🗑️ Куки удалены")
@@ -176,6 +159,18 @@ def clear_browser_data(driver):
         print("   🗑️ SessionStorage очищен")
     except:
         pass
+
+
+def deep_cleanup(driver):
+    """Глубокая очистка: сброс кэша и перезагрузка страницы"""
+    try:
+        driver.execute_script("window.location.reload(true);")
+        print("🔄 Страница перезагружена с очисткой кэша")
+        time.sleep(1)
+    except:
+        pass
+    clear_browser_data(driver)
+    return driver
 
 
 def parse_rate_from_html(html):
@@ -223,22 +218,8 @@ def get_random_alive_interval():
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
 
 
-def get_check_delay(is_profitable, fast_check_counter, buy_rate):
-    if buy_rate is not None and buy_rate < BUY_THRESHOLD:
-        if fast_check_counter < CRASH_FAST_TIMES:
-            return CRASH_FAST_INTERVAL
-    
-    if is_profitable:
-        if fast_check_counter < FAST_CHECK_TIMES:
-            return FAST_CHECK_INTERVAL
-        else:
-            return NORMAL_CHECK_INTERVAL
-    else:
-        return get_random_delay()
-
-
 def main():
-    global update_count, notification_count, last_alive_time, last_notification_time, fast_check_counter, was_profitable
+    global update_count, notification_count, last_alive_time, last_notification_time, last_cleanup_time, last_cleanup_check
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
@@ -249,13 +230,12 @@ def main():
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("📢 АДАПТИВНЫЕ ИНТЕРВАЛЫ ПРОВЕРКИ:")
-    print(f"   - Падение курса (первые 3 раза): 1 СЕКУНДА!")
-    print(f"   - Выгодный курс (первые 3 раза): 3 сек")
-    print(f"   - Выгодный курс (с 4-го раза): 5 сек")
-    print(f"   - Обычный курс: случайно {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
+    print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print("=" * 60)
-    print(f"💾 ОЧИСТКА ПАМЯТИ: при превышении {MEMORY_LIMIT_MB} МБ")
+    print(f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска):")
+    print(f"   - Каждые {CLEANUP_INTERVAL//60} минут")
+    print(f"   - Или каждые {CLEANUP_CHECK_COUNT} проверок")
     print("=" * 60)
 
     state = load_state()
@@ -278,57 +258,52 @@ def main():
     next_alive_interval = get_random_alive_interval()
     print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
-    print("\n🌐 Запускаем браузер...")
+    print("\n🌐 Запускаем браузер (он останется открытым)...")
     driver = get_driver()
     print("🌐 Открываем страницу...")
     driver.get(APP_URL)
     time.sleep(2)
-    print(f"💾 Начальная память: {get_memory_usage():.1f} МБ")
 
     while True:
         try:
             print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
             
-            # --- ПРОВЕРКА ПАМЯТИ ---
-            memory_mb = get_memory_usage()
-            if memory_mb > MEMORY_LIMIT_MB:
-                print(f"⚠️ Память: {memory_mb:.1f} МБ (лимит {MEMORY_LIMIT_MB} МБ)")
-                print("🔄 Перезапускаем браузер для освобождения памяти...")
+            # --- ПРОВЕРКА ОЧИСТКИ ПАМЯТИ ---
+            current_time = time.time()
+            need_cleanup = False
+            reason = ""
+            
+            # По времени
+            if current_time - last_cleanup_time >= CLEANUP_INTERVAL:
+                need_cleanup = True
+                reason = f"прошло {CLEANUP_INTERVAL//60} минут"
+            
+            # По количеству проверок
+            if update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT:
+                need_cleanup = True
+                reason = f"выполнено {CLEANUP_CHECK_COUNT} проверок"
+            
+            if need_cleanup:
+                print(f"🔄 Очистка памяти ({reason})...")
                 
                 # Отправляем сообщение админу
-                memory_message = (
-                    f"💾 ОЧИСТКА ПАМЯТИ!\n"
+                cleanup_message = (
+                    f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска)!\n"
                     f"\n"
-                    f"📊 Память достигла {memory_mb:.1f} МБ\n"
-                    f"📊 Лимит: {MEMORY_LIMIT_MB} МБ\n"
+                    f"📊 Причина: {reason}\n"
+                    f"📊 Проверок: {update_count}\n"
                     f"\n"
-                    f"🔄 Браузер перезапущен для освобождения памяти\n"
+                    f"🔄 Очищены куки и storage\n"
+                    f"🔄 Страница перезагружена\n"
                     f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                 )
-                send_vk_message_to_admin(memory_message)
+                send_vk_message_to_admin(cleanup_message)
                 print("💚 Отправлено сообщение админу об очистке памяти")
                 
-                try:
-                    driver.quit()
-                except:
-                    pass
-                driver = get_driver()
-                print("🌐 Открываем страницу...")
-                driver.get(APP_URL)
-                time.sleep(2)
-                new_memory = get_memory_usage()
-                print(f"✅ Память после перезапуска: {new_memory:.1f} МБ")
-                memory_cleared_message = (
-                    f"✅ ПАМЯТЬ ОЧИЩЕНА!\n"
-                    f"\n"
-                    f"📊 Было: {memory_mb:.1f} МБ\n"
-                    f"📊 Стало: {new_memory:.1f} МБ\n"
-                    f"📊 Освобождено: {memory_mb - new_memory:.1f} МБ\n"
-                    f"\n"
-                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
-                )
-                send_vk_message_to_admin(memory_cleared_message)
-                print("💚 Отправлено сообщение админу об успешной очистке")
+                driver = deep_cleanup(driver)
+                last_cleanup_time = current_time
+                last_cleanup_check = update_count
+                print("✅ Память очищена")
             else:
                 clear_browser_data(driver)
             
@@ -365,19 +340,11 @@ def main():
                 
                 is_profitable = check_conditions(buy_rate, sell_rate)
 
-                if is_profitable:
-                    if not was_profitable:
-                        fast_check_counter = 0
-                    fast_check_counter += 1
-                else:
-                    fast_check_counter = 0
-
-                was_profitable = is_profitable
-
                 print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate if sell_rate else 0}")
 
                 current_time = time.time()
                 
+                # --- "БОТ ЖИВ" ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -399,6 +366,7 @@ def main():
                     print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
                     print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
+                # --- УВЕДОМЛЕНИЯ ---
                 if buy_rate and sell_rate:
                     if is_profitable:
                         notification_count += 1
@@ -426,18 +394,8 @@ def main():
             else:
                 print("❌ Не удалось получить курс")
 
-            delay = get_check_delay(is_profitable, fast_check_counter, buy_rate)
-            
-            if buy_rate is not None and buy_rate < BUY_THRESHOLD and fast_check_counter <= CRASH_FAST_TIMES:
-                print(f"💥 ПАДЕНИЕ КУРСА! Быстрая проверка #{fast_check_counter}/{CRASH_FAST_TIMES} (интервал {delay} сек)")
-            elif is_profitable:
-                if fast_check_counter <= FAST_CHECK_TIMES:
-                    print(f"⚡ Быстрая проверка #{fast_check_counter}/{FAST_CHECK_TIMES} (интервал {delay} сек)")
-                else:
-                    print(f"📊 Обычная проверка выгодного курса (интервал {delay} сек)")
-            else:
-                print(f"🐢 Обычная проверка (интервал {delay} сек)")
-            
+            delay = get_random_delay()
+            print(f"🐢 Обычная проверка (интервал {delay} сек)")
             print(f"⏳ Следующая проверка через {delay} секунд...")
             time.sleep(delay)
 
@@ -446,6 +404,12 @@ def main():
             break
         except Exception as e:
             print(f"❌ Ошибка в цикле: {e}")
+            # При ошибке пробуем перезагрузить страницу
+            try:
+                driver.get(APP_URL)
+                time.sleep(2)
+            except:
+                pass
             time.sleep(get_random_delay())
     
     try:
