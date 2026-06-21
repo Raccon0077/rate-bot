@@ -3,6 +3,7 @@ import re
 import pickle
 import os
 import random
+import psutil
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -50,10 +51,8 @@ MAX_ALIVE_INTERVAL = 600
 # --- УВЕДОМЛЕНИЯ ---
 NOTIFICATION_INTERVAL = 1
 
-# --- ОЧИСТКА ПАМЯТИ (по времени) ---
-CLEANUP_INTERVAL = 1800  # 30 минут
-# Или по количеству проверок:
-CLEANUP_CHECK_COUNT = 100  # Каждые 100 проверок
+# --- ОЧИСТКА ПАМЯТИ ---
+MEMORY_LIMIT_MB = 350
 
 STATE_FILE = "bot_state.pkl"
 
@@ -74,8 +73,6 @@ last_alive_time = time.time()
 last_notification_time = 0
 fast_check_counter = 0
 was_profitable = False
-last_cleanup_time = time.time()
-last_cleanup_check = 0
 
 
 def load_state():
@@ -127,6 +124,14 @@ def send_vk_message_to_all(text):
             fail_count += 1
     print(f"📊 Итог: успешно {success_count}, ошибок {fail_count}")
     return success_count > 0
+
+
+def get_memory_usage():
+    try:
+        process = psutil.Process()
+        return process.memory_info().rss / 1024 / 1024
+    except:
+        return 0
 
 
 def get_driver():
@@ -232,39 +237,8 @@ def get_check_delay(is_profitable, fast_check_counter, buy_rate):
         return get_random_delay()
 
 
-def cleanup_browser(driver, reason="время"):
-    """Перезапускает браузер для очистки памяти"""
-    print(f"🔄 Очистка памяти ({reason})...")
-    
-    # Отправляем сообщение админу
-    cleanup_message = (
-        f"💾 ОЧИСТКА ПАМЯТИ!\n"
-        f"\n"
-        f"📊 Причина: {reason}\n"
-        f"📊 Проверок: {update_count}\n"
-        f"\n"
-        f"🔄 Браузер перезапущен для освобождения памяти\n"
-        f"⏰ {datetime.now().strftime('%H:%M:%S')}"
-    )
-    send_vk_message_to_admin(cleanup_message)
-    print("💚 Отправлено сообщение админу об очистке памяти")
-    
-    try:
-        driver.quit()
-    except:
-        pass
-    
-    driver = get_driver()
-    print("🌐 Открываем страницу...")
-    driver.get(APP_URL)
-    time.sleep(2)
-    print("✅ Память очищена")
-    
-    return driver
-
-
 def main():
-    global update_count, notification_count, last_alive_time, last_notification_time, fast_check_counter, was_profitable, last_cleanup_time, last_cleanup_check
+    global update_count, notification_count, last_alive_time, last_notification_time, fast_check_counter, was_profitable
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
@@ -281,7 +255,7 @@ def main():
     print(f"   - Выгодный курс (с 4-го раза): 5 сек")
     print(f"   - Обычный курс: случайно {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print("=" * 60)
-    print(f"💾 ОЧИСТКА ПАМЯТИ: каждые {CLEANUP_CHECK_COUNT} проверок или {CLEANUP_INTERVAL//60} минут")
+    print(f"💾 ОЧИСТКА ПАМЯТИ: при превышении {MEMORY_LIMIT_MB} МБ")
     print("=" * 60)
 
     state = load_state()
@@ -309,30 +283,52 @@ def main():
     print("🌐 Открываем страницу...")
     driver.get(APP_URL)
     time.sleep(2)
+    print(f"💾 Начальная память: {get_memory_usage():.1f} МБ")
 
     while True:
         try:
             print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
             
-            # --- ПРОВЕРКА ОЧИСТКИ ПАМЯТИ ---
-            current_time = time.time()
-            need_cleanup = False
-            reason = ""
-            
-            # По времени
-            if current_time - last_cleanup_time >= CLEANUP_INTERVAL:
-                need_cleanup = True
-                reason = f"прошло {CLEANUP_INTERVAL//60} минут"
-            
-            # По количеству проверок
-            if update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT:
-                need_cleanup = True
-                reason = f"выполнено {CLEANUP_CHECK_COUNT} проверок"
-            
-            if need_cleanup:
-                driver = cleanup_browser(driver, reason)
-                last_cleanup_time = current_time
-                last_cleanup_check = update_count
+            # --- ПРОВЕРКА ПАМЯТИ ---
+            memory_mb = get_memory_usage()
+            if memory_mb > MEMORY_LIMIT_MB:
+                print(f"⚠️ Память: {memory_mb:.1f} МБ (лимит {MEMORY_LIMIT_MB} МБ)")
+                print("🔄 Перезапускаем браузер для освобождения памяти...")
+                
+                # Отправляем сообщение админу
+                memory_message = (
+                    f"💾 ОЧИСТКА ПАМЯТИ!\n"
+                    f"\n"
+                    f"📊 Память достигла {memory_mb:.1f} МБ\n"
+                    f"📊 Лимит: {MEMORY_LIMIT_MB} МБ\n"
+                    f"\n"
+                    f"🔄 Браузер перезапущен для освобождения памяти\n"
+                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                )
+                send_vk_message_to_admin(memory_message)
+                print("💚 Отправлено сообщение админу об очистке памяти")
+                
+                try:
+                    driver.quit()
+                except:
+                    pass
+                driver = get_driver()
+                print("🌐 Открываем страницу...")
+                driver.get(APP_URL)
+                time.sleep(2)
+                new_memory = get_memory_usage()
+                print(f"✅ Память после перезапуска: {new_memory:.1f} МБ")
+                memory_cleared_message = (
+                    f"✅ ПАМЯТЬ ОЧИЩЕНА!\n"
+                    f"\n"
+                    f"📊 Было: {memory_mb:.1f} МБ\n"
+                    f"📊 Стало: {new_memory:.1f} МБ\n"
+                    f"📊 Освобождено: {memory_mb - new_memory:.1f} МБ\n"
+                    f"\n"
+                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                )
+                send_vk_message_to_admin(memory_cleared_message)
+                print("💚 Отправлено сообщение админу об успешной очистке")
             else:
                 clear_browser_data(driver)
             
