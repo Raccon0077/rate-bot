@@ -1,3 +1,4 @@
 selenium
 vk-api
 webdriver-manager
+psutil
