@@ -3,6 +3,7 @@ import re
 import pickle
 import os
 import random
+import psutil
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -19,8 +20,7 @@ print("🚀 Бот запускается...")
 # --- НАСТРОЙКИ ---
 GROUP_TOKEN = "vk1.a.AmFPbkY4T9acuaWmLC1gQYNU3DqhZpS1PR1CMlSR7GV36ryU7ogRz2URrgnXYGZYYm_h0SQBhy71_5AG5HcIb3csegaBnks_1PweRiC20t5Im-hfbhkZnVNykMmFJBEbzPZ52WoJWzXPPZYXwa1_wJfxmtfmd86W7OcBSMuK2AGCYsJO97g6MB5pPhLRYJVE_KFBO9lK0JpfeiPPy9aRSg"
 
-# --- ПОЛУЧАТЕЛИ ---
-ADMIN_ID = 212887447  # Только этот пользователь получает "Бот жив"
+ADMIN_ID = 212887447
 USER_IDS = [
     212887447,
     145156004,
@@ -40,12 +40,19 @@ NORMAL_CHECK_INTERVAL = 5
 MIN_CHECK_INTERVAL = 5
 MAX_CHECK_INTERVAL = 10
 
-# --- "БОТ ЖИВ" — 5-10 МИНУТ (ТОЛЬКО АДМИНУ) ---
-MIN_ALIVE_INTERVAL = 300   # 5 минут
-MAX_ALIVE_INTERVAL = 600   # 10 минут
+# --- УСКОРЕННАЯ РЕАКЦИЯ НА ПАДЕНИЕ ---
+CRASH_FAST_INTERVAL = 1
+CRASH_FAST_TIMES = 3
 
-# --- МИНИМАЛЬНАЯ ЗАДЕРЖКА МЕЖДУ УВЕДОМЛЕНИЯМИ ---
+# --- "БОТ ЖИВ" ---
+MIN_ALIVE_INTERVAL = 300
+MAX_ALIVE_INTERVAL = 600
+
+# --- УВЕДОМЛЕНИЯ ---
 NOTIFICATION_INTERVAL = 1
+
+# --- ОЧИСТКА ПАМЯТИ ---
+MEMORY_LIMIT_MB = 350
 
 STATE_FILE = "bot_state.pkl"
 
@@ -87,7 +94,6 @@ def save_state(state):
 
 
 def send_vk_message_to_admin(text):
-    """Отправляет сообщение ТОЛЬКО админу"""
     try:
         vk.messages.send(
             user_id=ADMIN_ID,
@@ -102,7 +108,6 @@ def send_vk_message_to_admin(text):
 
 
 def send_vk_message_to_all(text):
-    """Отправляет сообщение ВСЕМ пользователям"""
     success_count = 0
     fail_count = 0
     for user_id in USER_IDS:
@@ -119,6 +124,14 @@ def send_vk_message_to_all(text):
             fail_count += 1
     print(f"📊 Итог: успешно {success_count}, ошибок {fail_count}")
     return success_count > 0
+
+
+def get_memory_usage():
+    try:
+        process = psutil.Process()
+        return process.memory_info().rss / 1024 / 1024
+    except:
+        return 0
 
 
 def get_driver():
@@ -207,11 +220,14 @@ def get_random_delay():
 
 
 def get_random_alive_interval():
-    """Возвращает случайное время от 5 до 10 минут (в секундах)"""
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
 
 
-def get_check_delay(is_profitable, fast_check_counter):
+def get_check_delay(is_profitable, fast_check_counter, buy_rate):
+    if buy_rate is not None and buy_rate < BUY_THRESHOLD:
+        if fast_check_counter < CRASH_FAST_TIMES:
+            return CRASH_FAST_INTERVAL
+    
     if is_profitable:
         if fast_check_counter < FAST_CHECK_TIMES:
             return FAST_CHECK_INTERVAL
@@ -221,70 +237,25 @@ def get_check_delay(is_profitable, fast_check_counter):
         return get_random_delay()
 
 
-def check_rate_once():
-    driver = None
-    try:
-        driver = get_driver()
-        
-        print("🌐 Открываем страницу...")
-        driver.get(APP_URL)
-        time.sleep(2)
-        
-        print("🔄 Нажимаем 'Узнать курс'...")
-        try:
-            learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
-            learn_btn.click()
-            print("   ✅ Нажата кнопка 'Узнать курс'")
-            time.sleep(1)
-        except Exception as e:
-            print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
-        
-        print("🔄 Нажимаем 'Обновить курс'...")
-        try:
-            update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
-            update_btn.click()
-            print("   ✅ Нажата кнопка 'Обновить курс'")
-            time.sleep(0.5)
-        except Exception as e:
-            print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
-        
-        html = driver.page_source
-        print(f"📄 HTML получен, длина: {len(html)}")
-        
-        clear_browser_data(driver)
-        
-        return parse_rate_from_html(html)
-        
-    except Exception as e:
-        print(f"❌ Ошибка в check_rate_once: {e}")
-        return None, None
-    finally:
-        if driver:
-            try:
-                driver.quit()
-                print("✅ Браузер закрыт")
-            except:
-                pass
-
-
 def main():
     global update_count, notification_count, last_alive_time, last_notification_time, fast_check_counter, was_profitable
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
-    print(f"📱 Админ (получает 'Бот жив'): {ADMIN_ID}")
-    print(f"📱 Получатели уведомлений: {USER_IDS}")
+    print(f"📱 Админ: {ADMIN_ID}")
+    print(f"📱 Получатели: {USER_IDS}")
     print("=" * 60)
     print("📊 УСЛОВИЯ (ИЛИ):")
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
     print("📢 АДАПТИВНЫЕ ИНТЕРВАЛЫ ПРОВЕРКИ:")
-    print(f"   - При выгодном курсе: 3 сек (первые 3 раза), затем 5 сек")
-    print(f"   - При обычном курсе: случайно {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print(f"   - Падение курса (первые 3 раза): 1 СЕКУНДА!")
+    print(f"   - Выгодный курс (первые 3 раза): 3 сек")
+    print(f"   - Выгодный курс (с 4-го раза): 5 сек")
+    print(f"   - Обычный курс: случайно {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print("=" * 60)
-    print(f"📢 'Бот жив' — ТОЛЬКО АДМИНУ, каждые 5-10 минут")
-    print(f"📢 Уведомления о курсе — ВСЕМ пользователям")
+    print(f"💾 ОЧИСТКА ПАМЯТИ: при превышении {MEMORY_LIMIT_MB} МБ")
     print("=" * 60)
 
     state = load_state()
@@ -307,11 +278,87 @@ def main():
     next_alive_interval = get_random_alive_interval()
     print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
+    print("\n🌐 Запускаем браузер...")
+    driver = get_driver()
+    print("🌐 Открываем страницу...")
+    driver.get(APP_URL)
+    time.sleep(2)
+    print(f"💾 Начальная память: {get_memory_usage():.1f} МБ")
+
     while True:
         try:
             print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
             
-            buy_rate, sell_rate = check_rate_once()
+            # --- ПРОВЕРКА ПАМЯТИ ---
+            memory_mb = get_memory_usage()
+            if memory_mb > MEMORY_LIMIT_MB:
+                print(f"⚠️ Память: {memory_mb:.1f} МБ (лимит {MEMORY_LIMIT_MB} МБ)")
+                print("🔄 Перезапускаем браузер для освобождения памяти...")
+                
+                # Отправляем сообщение админу
+                memory_message = (
+                    f"💾 ОЧИСТКА ПАМЯТИ!\n"
+                    f"\n"
+                    f"📊 Память достигла {memory_mb:.1f} МБ\n"
+                    f"📊 Лимит: {MEMORY_LIMIT_MB} МБ\n"
+                    f"\n"
+                    f"🔄 Браузер перезапущен для освобождения памяти\n"
+                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                )
+                send_vk_message_to_admin(memory_message)
+                print("💚 Отправлено сообщение админу об очистке памяти")
+                
+                try:
+                    driver.quit()
+                except:
+                    pass
+                driver = get_driver()
+                print("🌐 Открываем страницу...")
+                driver.get(APP_URL)
+                time.sleep(2)
+                new_memory = get_memory_usage()
+                print(f"✅ Память после перезапуска: {new_memory:.1f} МБ")
+                memory_cleared_message = (
+                    f"✅ ПАМЯТЬ ОЧИЩЕНА!\n"
+                    f"\n"
+                    f"📊 Было: {memory_mb:.1f} МБ\n"
+                    f"📊 Стало: {new_memory:.1f} МБ\n"
+                    f"📊 Освобождено: {memory_mb - new_memory:.1f} МБ\n"
+                    f"\n"
+                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                )
+                send_vk_message_to_admin(memory_cleared_message)
+                print("💚 Отправлено сообщение админу об успешной очистке")
+            else:
+                clear_browser_data(driver)
+            
+            # --- ОБНОВЛЯЕМ СТРАНИЦУ ---
+            print("🔄 Обновляем страницу...")
+            driver.refresh()
+            time.sleep(0.3)
+            
+            print("🔄 Нажимаем 'Узнать курс'...")
+            try:
+                learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+                learn_btn.click()
+                print("   ✅ Нажата кнопка 'Узнать курс'")
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+            
+            print("🔄 Нажимаем 'Обновить курс'...")
+            try:
+                update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+                update_btn.click()
+                print("   ✅ Нажата кнопка 'Обновить курс'")
+                time.sleep(0.2)
+            except Exception as e:
+                print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+            
+            html = driver.page_source
+            print(f"📄 HTML получен, длина: {len(html)}")
+            
+            buy_rate, sell_rate = parse_rate_from_html(html)
 
             if buy_rate is not None:
                 update_count += 1
@@ -331,7 +378,6 @@ def main():
 
                 current_time = time.time()
                 
-                # --- "БОТ ЖИВ" — ТОЛЬКО АДМИНУ (каждые 5-10 минут) ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -353,7 +399,6 @@ def main():
                     print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
                     print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
-                # --- УВЕДОМЛЕНИЯ О ВЫГОДНОМ КУРСЕ — ВСЕМ ПОЛЬЗОВАТЕЛЯМ ---
                 if buy_rate and sell_rate:
                     if is_profitable:
                         notification_count += 1
@@ -381,10 +426,11 @@ def main():
             else:
                 print("❌ Не удалось получить курс")
 
-            # --- АДАПТИВНАЯ ЗАДЕРЖКА ---
-            delay = get_check_delay(is_profitable, fast_check_counter)
+            delay = get_check_delay(is_profitable, fast_check_counter, buy_rate)
             
-            if is_profitable:
+            if buy_rate is not None and buy_rate < BUY_THRESHOLD and fast_check_counter <= CRASH_FAST_TIMES:
+                print(f"💥 ПАДЕНИЕ КУРСА! Быстрая проверка #{fast_check_counter}/{CRASH_FAST_TIMES} (интервал {delay} сек)")
+            elif is_profitable:
                 if fast_check_counter <= FAST_CHECK_TIMES:
                     print(f"⚡ Быстрая проверка #{fast_check_counter}/{FAST_CHECK_TIMES} (интервал {delay} сек)")
                 else:
@@ -401,6 +447,12 @@ def main():
         except Exception as e:
             print(f"❌ Ошибка в цикле: {e}")
             time.sleep(get_random_delay())
+    
+    try:
+        driver.quit()
+        print("✅ Браузер закрыт")
+    except:
+        pass
 
 
 if __name__ == "__main__":
