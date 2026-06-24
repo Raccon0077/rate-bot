@@ -41,8 +41,11 @@ MAX_ALIVE_INTERVAL = 600
 
 # --- ОЧИСТКА ПАМЯТИ БЕЗ ПЕРЕЗАПУСКА ---
 CLEANUP_INTERVAL = 600  # 10 минут (600 секунд)
-# Или по количеству проверок:
 CLEANUP_CHECK_COUNT = 50  # Каждые 50 проверок
+
+# --- ПЕРЕСОЗДАНИЕ ДРАЙВЕРА ---
+DRIVER_RECREATE_INTERVAL = 1800  # 30 минут
+DRIVER_RECREATE_CHECK_COUNT = 100  # Каждые 100 проверок
 
 STATE_FILE = "bot_state.pkl"
 
@@ -63,6 +66,8 @@ last_alive_time = time.time()
 last_notification_time = 0
 last_cleanup_time = time.time()
 last_cleanup_check = 0
+last_driver_recreate_time = time.time()
+last_driver_recreate_check = 0
 
 
 def load_state():
@@ -117,6 +122,7 @@ def send_vk_message_to_all(text):
 
 
 def get_driver():
+    """Создает новый драйвер Chrome с оптимизированными настройками"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -131,10 +137,23 @@ def get_driver():
     options.add_argument("--disable-plugins")
     options.add_argument("--disable-images")
     options.add_argument("--memory-pressure-off")
+    options.add_argument("--max_old_space_size=512")  # Ограничение памяти
+    options.add_argument("--js-flags=--max-old-space-size=512")
+    
+    # Отключаем ненужные функции для экономии памяти
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-sync")
+    options.add_argument("--disable-default-apps")
+    options.add_argument("--disable-translate")
+    options.add_argument("--disable-features=TranslateUI")
+    options.add_argument("--disable-ipc-flooding-protection")
     
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
+        # Устанавливаем таймауты
+        driver.set_page_load_timeout(30)
+        driver.implicitly_wait(10)
         print("✅ Драйвер создан")
         return driver
     except Exception as e:
@@ -171,6 +190,24 @@ def deep_cleanup(driver):
         pass
     clear_browser_data(driver)
     return driver
+
+
+def recreate_driver(driver):
+    """Пересоздает драйвер для освобождения памяти"""
+    try:
+        print("🔄 Пересоздаём драйвер для освобождения памяти...")
+        driver.quit()
+        print("   ✅ Старый драйвер закрыт")
+    except:
+        pass
+    
+    time.sleep(2)
+    new_driver = get_driver()
+    print("🌐 Открываем страницу...")
+    new_driver.get(APP_URL)
+    time.sleep(2)
+    print("✅ Драйвер пересоздан")
+    return new_driver
 
 
 def parse_rate_from_html(html):
@@ -218,8 +255,55 @@ def get_random_alive_interval():
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
 
 
+def safe_get_html(driver, max_retries=3):
+    """Безопасно получает HTML с обработкой ошибок"""
+    for attempt in range(max_retries):
+        try:
+            # Проверяем, жив ли драйвер
+            try:
+                driver.current_url
+            except:
+                print(f"⚠️ Драйвер недоступен, попытка пересоздания...")
+                return None, True  # Нужно пересоздать драйвер
+            
+            # Пробуем обновить страницу
+            driver.refresh()
+            time.sleep(0.5)
+            
+            # Пробуем найти и нажать кнопки
+            try:
+                learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+                learn_btn.click()
+                print("   ✅ Нажата кнопка 'Узнать курс'")
+                time.sleep(0.3)
+            except:
+                pass
+            
+            try:
+                update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+                update_btn.click()
+                print("   ✅ Нажата кнопка 'Обновить курс'")
+                time.sleep(0.2)
+            except:
+                pass
+            
+            html = driver.page_source
+            if html and len(html) > 1000:
+                return html, False
+            
+            print(f"⚠️ HTML слишком короткий ({len(html) if html else 0}), повторная попытка...")
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"⚠️ Ошибка получения HTML (попытка {attempt+1}/{max_retries}): {e}")
+            time.sleep(1)
+    
+    return None, False
+
+
 def main():
-    global update_count, notification_count, last_alive_time, last_notification_time, last_cleanup_time, last_cleanup_check
+    global update_count, notification_count, last_alive_time, last_notification_time
+    global last_cleanup_time, last_cleanup_check, last_driver_recreate_time, last_driver_recreate_check
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
@@ -233,9 +317,10 @@ def main():
     print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
     print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print("=" * 60)
-    print(f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска):")
-    print(f"   - Каждые {CLEANUP_INTERVAL//60} минут")
-    print(f"   - Или каждые {CLEANUP_CHECK_COUNT} проверок")
+    print(f"💾 ОЧИСТКА ПАМЯТИ:")
+    print(f"   - Каждые {CLEANUP_INTERVAL//60} минут или {CLEANUP_CHECK_COUNT} проверок")
+    print(f"🔄 ПЕРЕСОЗДАНИЕ ДРАЙВЕРА:")
+    print(f"   - Каждые {DRIVER_RECREATE_INTERVAL//60} минут или {DRIVER_RECREATE_CHECK_COUNT} проверок")
     print("=" * 60)
 
     state = load_state()
@@ -258,48 +343,67 @@ def main():
     next_alive_interval = get_random_alive_interval()
     print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
-    print("\n🌐 Запускаем браузер (он останется открытым)...")
+    print("\n🌐 Запускаем браузер...")
     driver = get_driver()
     print("🌐 Открываем страницу...")
     driver.get(APP_URL)
     time.sleep(2)
 
+    last_driver_recreate_time = time.time()
+    last_driver_recreate_check = 0
+
     while True:
         try:
             print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
             
-            # --- ПРОВЕРКА ОЧИСТКИ ПАМЯТИ ---
             current_time = time.time()
-            need_cleanup = False
-            reason = ""
             
-            # По времени
-            if current_time - last_cleanup_time >= CLEANUP_INTERVAL:
-                need_cleanup = True
-                reason = f"прошло {CLEANUP_INTERVAL//60} минут"
+            # --- ПРОВЕРКА ПЕРЕСОЗДАНИЯ ДРАЙВЕРА ---
+            need_recreate = False
+            recreate_reason = ""
             
-            # По количеству проверок
-            if update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT:
-                need_cleanup = True
-                reason = f"выполнено {CLEANUP_CHECK_COUNT} проверок"
+            if current_time - last_driver_recreate_time >= DRIVER_RECREATE_INTERVAL:
+                need_recreate = True
+                recreate_reason = f"прошло {DRIVER_RECREATE_INTERVAL//60} минут"
             
-            if need_cleanup:
-                print(f"🔄 Очистка памяти ({reason})...")
+            if update_count - last_driver_recreate_check >= DRIVER_RECREATE_CHECK_COUNT:
+                need_recreate = True
+                recreate_reason = f"выполнено {DRIVER_RECREATE_CHECK_COUNT} проверок"
+            
+            if need_recreate:
+                print(f"🔄 Пересоздание драйвера ({recreate_reason})...")
                 
-                # Отправляем сообщение админу
-                cleanup_message = (
-                    f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска)!\n"
+                recreate_message = (
+                    f"🔄 ПЕРЕСОЗДАНИЕ ДРАЙВЕРА!\n"
                     f"\n"
-                    f"📊 Причина: {reason}\n"
+                    f"📊 Причина: {recreate_reason}\n"
                     f"📊 Проверок: {update_count}\n"
                     f"\n"
-                    f"🔄 Очищены куки и storage\n"
-                    f"🔄 Страница перезагружена\n"
+                    f"🔄 Драйвер пересоздан для освобождения памяти\n"
                     f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                 )
-                send_vk_message_to_admin(cleanup_message)
-                print("💚 Отправлено сообщение админу об очистке памяти")
+                send_vk_message_to_admin(recreate_message)
                 
+                driver = recreate_driver(driver)
+                last_driver_recreate_time = current_time
+                last_driver_recreate_check = update_count
+                print("✅ Драйвер пересоздан")
+                continue
+            
+            # --- ПРОВЕРКА ОЧИСТКИ ПАМЯТИ ---
+            need_cleanup = False
+            cleanup_reason = ""
+            
+            if current_time - last_cleanup_time >= CLEANUP_INTERVAL:
+                need_cleanup = True
+                cleanup_reason = f"прошло {CLEANUP_INTERVAL//60} минут"
+            
+            if update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT:
+                need_cleanup = True
+                cleanup_reason = f"выполнено {CLEANUP_CHECK_COUNT} проверок"
+            
+            if need_cleanup:
+                print(f"🔄 Очистка памяти ({cleanup_reason})...")
                 driver = deep_cleanup(driver)
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
@@ -307,30 +411,19 @@ def main():
             else:
                 clear_browser_data(driver)
             
-            # --- ОБНОВЛЯЕМ СТРАНИЦУ ---
-            print("🔄 Обновляем страницу...")
-            driver.refresh()
-            time.sleep(0.3)
+            # --- ПОЛУЧАЕМ HTML ---
+            html, need_recreate = safe_get_html(driver)
             
-            print("🔄 Нажимаем 'Узнать курс'...")
-            try:
-                learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
-                learn_btn.click()
-                print("   ✅ Нажата кнопка 'Узнать курс'")
-                time.sleep(0.3)
-            except Exception as e:
-                print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+            if need_recreate:
+                print("🔄 Пересоздаём драйвер из-за ошибки...")
+                driver = recreate_driver(driver)
+                continue
             
-            print("🔄 Нажимаем 'Обновить курс'...")
-            try:
-                update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
-                update_btn.click()
-                print("   ✅ Нажата кнопка 'Обновить курс'")
-                time.sleep(0.2)
-            except Exception as e:
-                print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+            if not html:
+                print("❌ Не удалось получить HTML")
+                time.sleep(get_random_delay())
+                continue
             
-            html = driver.page_source
             print(f"📄 HTML получен, длина: {len(html)}")
             
             buy_rate, sell_rate = parse_rate_from_html(html)
@@ -342,8 +435,6 @@ def main():
 
                 print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate if sell_rate else 0}")
 
-                current_time = time.time()
-                
                 # --- "БОТ ЖИВ" ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
@@ -372,7 +463,6 @@ def main():
                         notification_count += 1
                         print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
 
-                        current_time = time.time()
                         if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
                             message = (
                                 f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
@@ -404,12 +494,19 @@ def main():
             break
         except Exception as e:
             print(f"❌ Ошибка в цикле: {e}")
-            # При ошибке пробуем перезагрузить страницу
+            # Пытаемся восстановить драйвер
             try:
+                print("🔄 Пытаемся восстановить драйвер...")
+                driver = recreate_driver(driver)
+            except:
+                print("❌ Не удалось восстановить драйвер, создаём новый...")
+                try:
+                    driver.quit()
+                except:
+                    pass
+                driver = get_driver()
                 driver.get(APP_URL)
                 time.sleep(2)
-            except:
-                pass
             time.sleep(get_random_delay())
     
     try:
