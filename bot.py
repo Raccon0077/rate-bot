@@ -169,6 +169,7 @@ def get_driver():
 def click_update_button(driver):
     """БЫСТРЫЙ клик по кнопке 'Обновить курс' через JavaScript"""
     try:
+        # Пробуем через JavaScript (быстрее)
         driver.execute_script("""
             var btns = document.querySelectorAll('*');
             for(var i=0; i<btns.length; i++) {
@@ -180,17 +181,18 @@ def click_update_button(driver):
             return false;
         """)
         print("   ✅ Кнопка 'Обновить курс' нажата (JS)")
-        time.sleep(0.3)
+        time.sleep(0.2)  # Минимальная задержка
         return True
     except Exception as e:
         print(f"   ⚠️ Ошибка клика через JS: {e}")
         
+        # Если JS не сработал, пробуем через Selenium
         try:
             buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
             if buttons:
                 buttons[0].click()
                 print("   ✅ Кнопка 'Обновить курс' нажата (Selenium)")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 return True
         except:
             pass
@@ -199,7 +201,7 @@ def click_update_button(driver):
         return False
 
 
-def get_rate_selenium(driver):
+def get_rate_with_selenium(driver):
     """Получение курса через Selenium с кэшированием"""
     global last_buy_rate, last_sell_rate, last_rate_time
     
@@ -210,22 +212,19 @@ def get_rate_selenium(driver):
         return last_buy_rate, last_sell_rate
     
     try:
-        # Кликаем кнопку
-        click_update_button(driver)
+        # Получаем HTML через JavaScript (быстрее чем page_source)
+        html = driver.execute_script("return document.documentElement.outerHTML;")
         
-        # Получаем HTML через Selenium
-        html = driver.page_source
-        
-        # Парсим курс
+        # Парсим
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*💎100[^0-9]*=>?[^0-9]*🌕([0-9]+)', html)
         
         if not sell_match:
             sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
         
-        if buy_match and sell_match:
+        if buy_match:
             buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1))
+            sell_rate = int(sell_match.group(1)) if sell_match else 0
             
             # Обновляем кэш
             last_buy_rate = buy_rate
@@ -243,6 +242,7 @@ def get_rate_selenium(driver):
 def update_page_fast(driver):
     """БЫСТРОЕ обновление страницы"""
     try:
+        # Обновляем через JavaScript (быстрее чем refresh())
         driver.execute_script("location.reload();")
         time.sleep(0.3)
         return True
@@ -289,7 +289,7 @@ def main():
     global update_count, notification_count, last_alive_time, last_notification_time
     global last_cleanup_time, last_cleanup_check, last_driver_recreate_time, last_driver_recreate_check
 
-    print("🤖 Бот для отслеживания курса осколков (Selenium)")
+    print("🤖 Бот для отслеживания курса осколков (Selenium OPTIMIZED)")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
     print(f"📱 Получатели: {len(USER_IDS)}")
@@ -298,10 +298,11 @@ def main():
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("⚡ НАСТРОЙКИ:")
+    print("⚡ ОПТИМИЗИРОВАННАЯ ВЕРСИЯ:")
     print(f"   - JavaScript для кликов")
     print(f"   - Кэширование курса: {RATE_CACHE_TTL} сек")
     print(f"   - Параллельная отправка сообщений")
+    print(f"   - Минимальные задержки")
     print("=" * 60)
     print(f"⏰ Интервал проверки: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print(f"⏰ 'Бот жив': {MIN_ALIVE_INTERVAL//3600}-{MAX_ALIVE_INTERVAL//3600} часов")
@@ -313,7 +314,7 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН! (SELENIUM)\n"
+            f"🚀 БОТ ЗАПУЩЕН! (ОПТИМИЗИРОВАННЫЙ)\n"
             f"\n"
             f"⚡ JavaScript для быстрых кликов\n"
             f"📊 Отслеживание курса осколков\n"
@@ -360,8 +361,14 @@ def main():
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
             
+            # --- ОБНОВЛЕНИЕ СТРАНИЦЫ ---
+            update_page_fast(driver)
+            
+            # --- КЛИК ПО КНОПКЕ ---
+            click_update_button(driver)
+            
             # --- ПОЛУЧЕНИЕ КУРСА ---
-            buy_rate, sell_rate = get_rate_selenium(driver)
+            buy_rate, sell_rate = get_rate_with_selenium(driver)
 
             if buy_rate is not None:
                 update_count += 1
