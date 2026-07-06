@@ -3,6 +3,8 @@ import re
 import pickle
 import os
 import random
+import requests
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -129,7 +131,7 @@ def send_vk_message_to_all(text):
 
 
 def get_driver():
-    """Создает оптимизированный драйвер"""
+    """Создает оптимизированный драйвер ТОЛЬКО для кликов"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -142,7 +144,7 @@ def get_driver():
     options.add_argument("--disable-crash-reporter")
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
-    options.add_argument("--disable-images")
+    options.add_argument("--disable-images")  # Не грузить картинки
     options.add_argument("--memory-pressure-off")
     options.add_argument("--max_old_space_size=512")
     options.add_argument("--js-flags=--max-old-space-size=512")
@@ -169,7 +171,6 @@ def get_driver():
 def click_update_button(driver):
     """БЫСТРЫЙ клик по кнопке 'Обновить курс' через JavaScript"""
     try:
-        # Пробуем через JavaScript (быстрее)
         driver.execute_script("""
             var btns = document.querySelectorAll('*');
             for(var i=0; i<btns.length; i++) {
@@ -181,12 +182,11 @@ def click_update_button(driver):
             return false;
         """)
         print("   ✅ Кнопка 'Обновить курс' нажата (JS)")
-        time.sleep(0.2)  # Минимальная задержка
+        time.sleep(0.2)
         return True
     except Exception as e:
         print(f"   ⚠️ Ошибка клика через JS: {e}")
         
-        # Если JS не сработал, пробуем через Selenium
         try:
             buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
             if buttons:
@@ -201,8 +201,8 @@ def click_update_button(driver):
         return False
 
 
-def get_rate_with_selenium(driver):
-    """Получение курса через Selenium с кэшированием"""
+def get_rate_hybrid(driver):
+    """ГИБРИД: клик через Selenium, парсинг через requests"""
     global last_buy_rate, last_sell_rate, last_rate_time
     
     # Проверяем кэш
@@ -212,19 +212,28 @@ def get_rate_with_selenium(driver):
         return last_buy_rate, last_sell_rate
     
     try:
-        # Получаем HTML через JavaScript (быстрее чем page_source)
-        html = driver.execute_script("return document.documentElement.outerHTML;")
+        # Шаг 1: Кликаем кнопку через Selenium
+        if not click_update_button(driver):
+            return None, None
         
-        # Парсим
+        # Шаг 2: Получаем HTML через requests (БЫСТРО!)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(APP_URL, headers=headers, timeout=5)
+        response.encoding = 'utf-8'
+        html = response.text
+        
+        # Шаг 3: Парсим курс
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*💎100[^0-9]*=>?[^0-9]*🌕([0-9]+)', html)
         
         if not sell_match:
             sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
         
-        if buy_match:
+        if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1)) if sell_match else 0
+            sell_rate = int(sell_match.group(1))
             
             # Обновляем кэш
             last_buy_rate = buy_rate
@@ -237,18 +246,6 @@ def get_rate_with_selenium(driver):
     except Exception as e:
         print(f"   ❌ Ошибка получения курса: {e}")
         return None, None
-
-
-def update_page_fast(driver):
-    """БЫСТРОЕ обновление страницы"""
-    try:
-        # Обновляем через JavaScript (быстрее чем refresh())
-        driver.execute_script("location.reload();")
-        time.sleep(0.3)
-        return True
-    except Exception as e:
-        print(f"   ⚠️ Ошибка обновления: {e}")
-        return False
 
 
 def clear_browser_data(driver):
@@ -289,7 +286,7 @@ def main():
     global update_count, notification_count, last_alive_time, last_notification_time
     global last_cleanup_time, last_cleanup_check, last_driver_recreate_time, last_driver_recreate_check
 
-    print("🤖 Бот для отслеживания курса осколков (Selenium OPTIMIZED)")
+    print("🤖 Бот для отслеживания курса осколков (ГИБРИДНАЯ ВЕРСИЯ)")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
     print(f"📱 Получатели: {len(USER_IDS)}")
@@ -298,11 +295,11 @@ def main():
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("⚡ ОПТИМИЗИРОВАННАЯ ВЕРСИЯ:")
-    print(f"   - JavaScript для кликов")
+    print("⚡ ГИБРИДНЫЙ ПОДХОД:")
+    print(f"   - Клик по кнопке: Selenium (JS)")
+    print(f"   - Парсинг курса: requests (БЫСТРО!)")
     print(f"   - Кэширование курса: {RATE_CACHE_TTL} сек")
     print(f"   - Параллельная отправка сообщений")
-    print(f"   - Минимальные задержки")
     print("=" * 60)
     print(f"⏰ Интервал проверки: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print(f"⏰ 'Бот жив': {MIN_ALIVE_INTERVAL//3600}-{MAX_ALIVE_INTERVAL//3600} часов")
@@ -314,9 +311,9 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН! (ОПТИМИЗИРОВАННЫЙ)\n"
+            f"🚀 БОТ ЗАПУЩЕН! (ГИБРИДНАЯ ВЕРСИЯ)\n"
             f"\n"
-            f"⚡ JavaScript для быстрых кликов\n"
+            f"⚡ Клик: Selenium | Парсинг: requests\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
             f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
@@ -361,21 +358,15 @@ def main():
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
             
-            # --- ОБНОВЛЕНИЕ СТРАНИЦЫ ---
-            update_page_fast(driver)
-            
-            # --- КЛИК ПО КНОПКЕ ---
-            click_update_button(driver)
-            
-            # --- ПОЛУЧЕНИЕ КУРСА ---
-            buy_rate, sell_rate = get_rate_with_selenium(driver)
+            # --- ПОЛУЧЕНИЕ КУРСА (гибрид) ---
+            buy_rate, sell_rate = get_rate_hybrid(driver)
 
             if buy_rate is not None:
                 update_count += 1
                 
                 is_profitable = check_conditions(buy_rate, sell_rate)
 
-                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
+                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate} (за {time.time()-start_time:.2f} сек)")
 
                 # --- "БОТ ЖИВ" (1-2 часа) ---
                 if current_time - last_alive_time >= next_alive_interval:
