@@ -3,8 +3,6 @@ import re
 import pickle
 import os
 import random
-import requests
-from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -131,7 +129,7 @@ def send_vk_message_to_all(text):
 
 
 def get_driver():
-    """Создает оптимизированный драйвер ТОЛЬКО для кликов"""
+    """Создает оптимизированный драйвер"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -144,7 +142,7 @@ def get_driver():
     options.add_argument("--disable-crash-reporter")
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
-    options.add_argument("--disable-images")  # Не грузить картинки
+    options.add_argument("--disable-images")
     options.add_argument("--memory-pressure-off")
     options.add_argument("--max_old_space_size=512")
     options.add_argument("--js-flags=--max-old-space-size=512")
@@ -182,7 +180,7 @@ def click_update_button(driver):
             return false;
         """)
         print("   ✅ Кнопка 'Обновить курс' нажата (JS)")
-        time.sleep(0.2)
+        time.sleep(0.3)
         return True
     except Exception as e:
         print(f"   ⚠️ Ошибка клика через JS: {e}")
@@ -192,7 +190,7 @@ def click_update_button(driver):
             if buttons:
                 buttons[0].click()
                 print("   ✅ Кнопка 'Обновить курс' нажата (Selenium)")
-                time.sleep(0.2)
+                time.sleep(0.3)
                 return True
         except:
             pass
@@ -201,8 +199,8 @@ def click_update_button(driver):
         return False
 
 
-def get_rate_hybrid(driver):
-    """ГИБРИД: клик через Selenium, парсинг через requests"""
+def get_rate_selenium(driver):
+    """Получение курса через Selenium с кэшированием"""
     global last_buy_rate, last_sell_rate, last_rate_time
     
     # Проверяем кэш
@@ -212,19 +210,13 @@ def get_rate_hybrid(driver):
         return last_buy_rate, last_sell_rate
     
     try:
-        # Шаг 1: Кликаем кнопку через Selenium
-        if not click_update_button(driver):
-            return None, None
+        # Кликаем кнопку
+        click_update_button(driver)
         
-        # Шаг 2: Получаем HTML через requests (БЫСТРО!)
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(APP_URL, headers=headers, timeout=5)
-        response.encoding = 'utf-8'
-        html = response.text
+        # Получаем HTML через Selenium
+        html = driver.page_source
         
-        # Шаг 3: Парсим курс
+        # Парсим курс
         buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
         sell_match = re.search(r'Продажа[^0-9]*💎100[^0-9]*=>?[^0-9]*🌕([0-9]+)', html)
         
@@ -246,6 +238,17 @@ def get_rate_hybrid(driver):
     except Exception as e:
         print(f"   ❌ Ошибка получения курса: {e}")
         return None, None
+
+
+def update_page_fast(driver):
+    """БЫСТРОЕ обновление страницы"""
+    try:
+        driver.execute_script("location.reload();")
+        time.sleep(0.3)
+        return True
+    except Exception as e:
+        print(f"   ⚠️ Ошибка обновления: {e}")
+        return False
 
 
 def clear_browser_data(driver):
@@ -286,7 +289,7 @@ def main():
     global update_count, notification_count, last_alive_time, last_notification_time
     global last_cleanup_time, last_cleanup_check, last_driver_recreate_time, last_driver_recreate_check
 
-    print("🤖 Бот для отслеживания курса осколков (ГИБРИДНАЯ ВЕРСИЯ)")
+    print("🤖 Бот для отслеживания курса осколков (Selenium)")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
     print(f"📱 Получатели: {len(USER_IDS)}")
@@ -295,9 +298,8 @@ def main():
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("⚡ ГИБРИДНЫЙ ПОДХОД:")
-    print(f"   - Клик по кнопке: Selenium (JS)")
-    print(f"   - Парсинг курса: requests (БЫСТРО!)")
+    print("⚡ НАСТРОЙКИ:")
+    print(f"   - JavaScript для кликов")
     print(f"   - Кэширование курса: {RATE_CACHE_TTL} сек")
     print(f"   - Параллельная отправка сообщений")
     print("=" * 60)
@@ -311,9 +313,9 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН! (ГИБРИДНАЯ ВЕРСИЯ)\n"
+            f"🚀 БОТ ЗАПУЩЕН! (SELENIUM)\n"
             f"\n"
-            f"⚡ Клик: Selenium | Парсинг: requests\n"
+            f"⚡ JavaScript для быстрых кликов\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
             f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
@@ -358,15 +360,15 @@ def main():
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
             
-            # --- ПОЛУЧЕНИЕ КУРСА (гибрид) ---
-            buy_rate, sell_rate = get_rate_hybrid(driver)
+            # --- ПОЛУЧЕНИЕ КУРСА ---
+            buy_rate, sell_rate = get_rate_selenium(driver)
 
             if buy_rate is not None:
                 update_count += 1
                 
                 is_profitable = check_conditions(buy_rate, sell_rate)
 
-                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate} (за {time.time()-start_time:.2f} сек)")
+                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
 
                 # --- "БОТ ЖИВ" (1-2 часа) ---
                 if current_time - last_alive_time >= next_alive_interval:
