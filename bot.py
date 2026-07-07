@@ -13,6 +13,7 @@ from datetime import datetime
 import vk_api
 from vk_api.utils import get_random_id
 from webdriver_manager.chrome import ChromeDriverManager
+from concurrent.futures import ThreadPoolExecutor
 
 print("🚀 Бот запускается...")
 
@@ -32,16 +33,15 @@ SELL_THRESHOLD = 70000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
-# --- ИНТЕРВАЛЫ ---
-MIN_CHECK_INTERVAL = 5
-MAX_CHECK_INTERVAL = 10
-NOTIFICATION_INTERVAL = 1
-MIN_ALIVE_INTERVAL = 300
-MAX_ALIVE_INTERVAL = 600
+# --- ИНТЕРВАЛЫ (ОПТИМИЗИРОВАННЫЕ) ---
+MIN_CHECK_INTERVAL = 4      # 4 секунды минимум
+MAX_CHECK_INTERVAL = 8      # 8 секунд максимум
+NOTIFICATION_INTERVAL = 0.5 # 0.5 секунды между уведомлениями
+MIN_ALIVE_INTERVAL = 300    # 5 минут
+MAX_ALIVE_INTERVAL = 1800   # 30 минут
 
 # --- ОЧИСТКА ПАМЯТИ БЕЗ ПЕРЕЗАПУСКА ---
-CLEANUP_INTERVAL = 600  # 10 минут (600 секунд)
-# Или по количеству проверок:
+CLEANUP_INTERVAL = 600  # 10 минут
 CLEANUP_CHECK_COUNT = 50  # Каждые 50 проверок
 
 STATE_FILE = "bot_state.pkl"
@@ -98,9 +98,8 @@ def send_vk_message_to_admin(text):
 
 
 def send_vk_message_to_all(text):
-    success_count = 0
-    fail_count = 0
-    for user_id in USER_IDS:
+    """Параллельная отправка сообщений всем пользователям"""
+    def send_to_user(user_id):
         try:
             vk.messages.send(
                 user_id=user_id,
@@ -108,10 +107,16 @@ def send_vk_message_to_all(text):
                 message=text
             )
             print(f"   ✅ Отправлено пользователю {user_id}")
-            success_count += 1
+            return True
         except Exception as e:
             print(f"   ❌ Ошибка отправки пользователю {user_id}: {e}")
-            fail_count += 1
+            return False
+    
+    with ThreadPoolExecutor(max_workers=len(USER_IDS)) as executor:
+        results = list(executor.map(send_to_user, USER_IDS))
+    
+    success_count = sum(results)
+    fail_count = len(USER_IDS) - success_count
     print(f"📊 Итог: успешно {success_count}, ошибок {fail_count}")
     return success_count > 0
 
@@ -221,7 +226,7 @@ def get_random_alive_interval():
 def main():
     global update_count, notification_count, last_alive_time, last_notification_time, last_cleanup_time, last_cleanup_check
 
-    print("🤖 Бот для отслеживания курса осколков")
+    print("🤖 Бот для отслеживания курса осколков (ОПТИМИЗИРОВАННЫЙ)")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
     print(f"📱 Получатели: {USER_IDS}")
@@ -230,12 +235,13 @@ def main():
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
-    print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print("📢 ОПТИМИЗИРОВАННЫЕ ИНТЕРВАЛЫ:")
+    print(f"   - Проверка курса: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print(f"   - 'Бот жив': {MIN_ALIVE_INTERVAL//60}-{MAX_ALIVE_INTERVAL//60} минут")
+    print(f"   - Уведомления: не чаще {NOTIFICATION_INTERVAL} сек")
     print("=" * 60)
-    print(f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска):")
-    print(f"   - Каждые {CLEANUP_INTERVAL//60} минут")
-    print(f"   - Или каждые {CLEANUP_CHECK_COUNT} проверок")
+    print("⚡ ПАРАЛЛЕЛЬНАЯ ОТПРАВКА:")
+    print(f"   - Сообщения отправляются одновременно всем {len(USER_IDS)} получателям")
     print("=" * 60)
 
     state = load_state()
@@ -244,11 +250,13 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ!\n"
+            f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ! (ОПТИМИЗИРОВАННЫЙ)\n"
             f"\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
-            f"🔴 Продажа: выше {SELL_THRESHOLD}"
+            f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
+            f"⚡ Проверка: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек\n"
+            f"⚡ Параллельная отправка сообщений"
         )
         send_vk_message_to_admin(start_message)
         state["first_start_done"] = True
@@ -273,12 +281,10 @@ def main():
             need_cleanup = False
             reason = ""
             
-            # По времени
             if current_time - last_cleanup_time >= CLEANUP_INTERVAL:
                 need_cleanup = True
                 reason = f"прошло {CLEANUP_INTERVAL//60} минут"
             
-            # По количеству проверок
             if update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT:
                 need_cleanup = True
                 reason = f"выполнено {CLEANUP_CHECK_COUNT} проверок"
@@ -286,7 +292,6 @@ def main():
             if need_cleanup:
                 print(f"🔄 Очистка памяти ({reason})...")
                 
-                # Отправляем сообщение админу
                 cleanup_message = (
                     f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска)!\n"
                     f"\n"
@@ -317,7 +322,7 @@ def main():
                 learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
                 learn_btn.click()
                 print("   ✅ Нажата кнопка 'Узнать курс'")
-                time.sleep(0.3)
+                time.sleep(0.2)
             except Exception as e:
                 print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
             
@@ -344,7 +349,7 @@ def main():
 
                 current_time = time.time()
                 
-                # --- "БОТ ЖИВ" ---
+                # --- "БОТ ЖИВ" (5-30 минут) ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -404,7 +409,6 @@ def main():
             break
         except Exception as e:
             print(f"❌ Ошибка в цикле: {e}")
-            # При ошибке пробуем перезагрузить страницу
             try:
                 driver.get(APP_URL)
                 time.sleep(2)
