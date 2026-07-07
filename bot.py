@@ -182,6 +182,7 @@ def is_driver_crashed(exception):
 
 
 def click_update_button(driver):
+    """Нажатие кнопки 'Обновить курс'"""
     try:
         driver.execute_script("""
             var btns = document.querySelectorAll('*');
@@ -193,30 +194,65 @@ def click_update_button(driver):
             }
             return false;
         """)
-        print("   ✅ Кнопка нажата (JS)")
+        print("   ✅ Кнопка 'Обновить курс' нажата")
         time.sleep(0.5)
         return True
     except Exception as e:
         if is_driver_crashed(e):
-            print(f"   💥 КРАШ при клике: {e}")
+            print(f"   💥 КРАШ: {e}")
             return "CRASH"
         
         try:
             buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
             if buttons:
                 buttons[0].click()
-                print("   ✅ Кнопка нажата (Selenium)")
+                print("   ✅ Кнопка 'Обновить курс' нажата (Selenium)")
                 time.sleep(0.5)
                 return True
         except:
             pass
         
-        print("   ⚠️ Кнопка не найдена")
+        print("   ⚠️ Кнопка 'Обновить курс' не найдена")
+        return False
+
+
+def click_learn_button(driver):
+    """Нажатие кнопки 'Узнать курс'"""
+    try:
+        driver.execute_script("""
+            var btns = document.querySelectorAll('*');
+            for(var i=0; i<btns.length; i++) {
+                if(btns[i].textContent && btns[i].textContent.includes('Узнать курс')) {
+                    btns[i].click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+        print("   ✅ Кнопка 'Узнать курс' нажата")
+        time.sleep(0.5)
+        return True
+    except Exception as e:
+        if is_driver_crashed(e):
+            print(f"   💥 КРАШ: {e}")
+            return "CRASH"
+        
+        try:
+            buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+            if buttons:
+                buttons[0].click()
+                print("   ✅ Кнопка 'Узнать курс' нажата (Selenium)")
+                time.sleep(0.5)
+                return True
+        except:
+            pass
+        
+        print("   ⚠️ Кнопка 'Узнать курс' не найдена")
         return False
 
 
 def get_rate_with_selenium(driver):
-    """Получение курса с поиском кнопки и проверкой страницы"""
+    """Получение курса: сначала Узнать курс, потом Обновить курс"""
     global last_buy_rate, last_sell_rate, last_rate_time
     
     current_time = time.time()
@@ -229,23 +265,19 @@ def get_rate_with_selenium(driver):
         driver.get(APP_URL)
         time.sleep(2)
         
-        # 🔍 ПРОВЕРЯЕМ, ЕСТЬ ЛИ КНОПКА
-        page_text = driver.find_element(By.TAG_NAME, "body").text
+        # ============================================
+        # ШАГ 1: НАЖИМАЕМ "Узнать курс"
+        # ============================================
+        learn_result = click_learn_button(driver)
+        if learn_result == "CRASH":
+            return "CRASH", "CRASH"
         
-        if "Обновить курс" not in page_text:
-            print("   ⚠️ Кнопка 'Обновить курс' не найдена на странице")
-            
-            # Пробуем найти ссылку на биржу или обмен
-            try:
-                exchange_link = driver.find_element(By.XPATH, "//a[contains(text(), 'Биржа') or contains(text(), 'Обмен')]")
-                exchange_link.click()
-                print("   🔄 Переход по ссылке 'Биржа/Обмен'")
-                time.sleep(2)
-            except:
-                pass
-        
-        # Кликаем кнопку
-        click_update_button(driver)
+        # ============================================
+        # ШАГ 2: НАЖИМАЕМ "Обновить курс"
+        # ============================================
+        update_result = click_update_button(driver)
+        if update_result == "CRASH":
+            return "CRASH", "CRASH"
         
         # Ждем обновления
         time.sleep(1)
@@ -257,7 +289,7 @@ def get_rate_with_selenium(driver):
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(html)
         
-        # Ищем курс (разные варианты)
+        # Ищем курс
         buy_match = re.search(r'Покупка\s*[:]?\s*([0-9]+)', html, re.IGNORECASE)
         if not buy_match:
             buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
@@ -332,6 +364,11 @@ def main():
     print(f"🔴 Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
     print(f"⏰ Интервал: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print("=" * 60)
+    print("🔧 ПОРЯДОК ДЕЙСТВИЙ:")
+    print("   1️⃣ Нажать 'Узнать курс'")
+    print("   2️⃣ Нажать 'Обновить курс'")
+    print("   3️⃣ Парсить курс")
     print("=" * 60)
 
     state = load_state()
