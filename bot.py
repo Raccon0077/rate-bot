@@ -27,7 +27,7 @@ USER_IDS = [
 ]
 
 BUY_THRESHOLD = 50000
-SELL_THRESHOLD =70000
+SELL_THRESHOLD = 70000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
@@ -36,15 +36,12 @@ MIN_CHECK_INTERVAL = 4
 MAX_CHECK_INTERVAL = 7
 NOTIFICATION_INTERVAL = 1
 
-# --- "БОТ ЖИВ" ---
 MIN_ALIVE_INTERVAL = 3600
 MAX_ALIVE_INTERVAL = 7200
 
-# --- ОЧИСТКА ПАМЯТИ ---
 CLEANUP_INTERVAL = 900
 CLEANUP_CHECK_COUNT = 100
 
-# --- ПЕРЕСОЗДАНИЕ ДРАЙВЕРА ---
 DRIVER_RECREATE_INTERVAL = 1800
 DRIVER_RECREATE_CHECK_COUNT = 200
 
@@ -52,7 +49,6 @@ STATE_FILE = "bot_state.pkl"
 
 print("📌 Настройки загружены")
 
-# --- ИНИЦИАЛИЗАЦИЯ VK ---
 try:
     vk_session = vk_api.VkApi(token=GROUP_TOKEN)
     vk = vk_session.get_api()
@@ -128,7 +124,6 @@ def send_vk_message_to_all(text):
 
 
 def get_driver():
-    """Создает стабильный драйвер"""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -168,7 +163,6 @@ def get_driver():
 
 
 def recreate_driver(driver):
-    """Пересоздание драйвера"""
     print("   🔄 ПЕРЕСОЗДАНИЕ ДРАЙВЕРА...")
     try:
         driver.quit()
@@ -183,16 +177,14 @@ def recreate_driver(driver):
 
 
 def is_driver_crashed(exception):
-    """Проверяет, крашнулся ли браузер"""
     error = str(exception).lower()
     return "crashed" in error or "invalid session id" in error or "no such window" in error
 
 
 def update_page_fast(driver):
-    """Обновление страницы"""
     try:
         driver.execute_script("location.reload();")
-        time.sleep(0.3)
+        time.sleep(0.5)
         return True
     except Exception as e:
         if is_driver_crashed(e):
@@ -203,7 +195,6 @@ def update_page_fast(driver):
 
 
 def click_update_button(driver):
-    """Клик по кнопке"""
     try:
         driver.execute_script("""
             var btns = document.querySelectorAll('*');
@@ -216,7 +207,7 @@ def click_update_button(driver):
             return false;
         """)
         print("   ✅ Кнопка нажата (JS)")
-        time.sleep(0.2)
+        time.sleep(0.5)
         return True
     except Exception as e:
         if is_driver_crashed(e):
@@ -228,7 +219,7 @@ def click_update_button(driver):
             if buttons:
                 buttons[0].click()
                 print("   ✅ Кнопка нажата (Selenium)")
-                time.sleep(0.2)
+                time.sleep(0.5)
                 return True
         except:
             pass
@@ -238,7 +229,7 @@ def click_update_button(driver):
 
 
 def get_rate_with_selenium(driver):
-    """Получение курса"""
+    """Получение курса с исправленными регулярками"""
     global last_buy_rate, last_sell_rate, last_rate_time
     
     current_time = time.time()
@@ -247,28 +238,52 @@ def get_rate_with_selenium(driver):
         return last_buy_rate, last_sell_rate
     
     try:
+        # Получаем HTML
         html = driver.execute_script("return document.documentElement.outerHTML;")
         
-        buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-        sell_match = re.search(r'Продажа[^0-9]*💎100[^0-9]*=>?[^0-9]*🌕([0-9]+)', html)
+        # 🔍 СОХРАНЯЕМ ДЛЯ ОТЛАДКИ
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(html)
         
+        # ========================================
+        # 🔧 ИСПРАВЛЕННЫЕ РЕГУЛЯРНЫЕ ВЫРАЖЕНИЯ
+        # ========================================
+        
+        # Ищем цифры рядом со словом "Покупка"
+        buy_match = re.search(r'Покупка\s*[:]?\s*([0-9]+)', html, re.IGNORECASE)
+        if not buy_match:
+            buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+        
+        # Ищем цифры рядом со словом "Продажа" (разные варианты)
+        sell_match = re.search(r'Продажа\s*[:]?\s*[0-9]+\s*=>\s*([0-9]+)', html, re.IGNORECASE)
         if not sell_match:
             sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+        if not sell_match:
+            sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
         
-        if buy_match:
+        # 🔍 ВЫВОДИМ РЕЗУЛЬТАТЫ
+        print(f"   🔍 buy_match: {buy_match.group(1) if buy_match else '❌'}")
+        print(f"   🔍 sell_match: {sell_match.group(1) if sell_match else '❌'}")
+        
+        if buy_match and sell_match:
             buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1)) if sell_match else 0
+            sell_rate = int(sell_match.group(1))
             
             last_buy_rate = buy_rate
             last_sell_rate = sell_rate
             last_rate_time = current_time
             
+            print(f"   ✅ Курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
+        
+        # Пробуем найти через поиск по всему тексту
+        text = driver.find_element(By.TAG_NAME, "body").text
+        print(f"   📄 Текст страницы (первые 200 символов): {text[:200]}")
         
         return None, None
     except Exception as e:
         if is_driver_crashed(e):
-            print(f"   💥 КРАШ при получении курса: {e}")
+            print(f"   💥 КРАШ: {e}")
             return "CRASH", "CRASH"
         print(f"   ❌ Ошибка: {e}")
         return None, None
@@ -307,7 +322,6 @@ def main():
     print(f"🔴 Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
     print(f"⏰ Интервал: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
-    print(f"⏰ 'Бот жив': {MIN_ALIVE_INTERVAL//3600}-{MAX_ALIVE_INTERVAL//3600} час")
     print("=" * 60)
 
     state = load_state()
@@ -326,12 +340,11 @@ def main():
         save_state(state)
 
     next_alive_interval = get_random_alive_interval()
-    print(f"⏳ 'Бот жив' через {next_alive_interval // 60} мин")
 
     print("\n🌐 Запуск браузера...")
     driver = get_driver()
     driver.get(APP_URL)
-    time.sleep(1)
+    time.sleep(2)
 
     print("\n🚀 Мониторинг запущен!")
     print("=" * 60)
@@ -343,7 +356,6 @@ def main():
             
             current_time = time.time()
             
-            # --- ПЕРЕСОЗДАНИЕ (плановое) ---
             if (current_time - last_driver_recreate_time >= DRIVER_RECREATE_INTERVAL or 
                 update_count - last_driver_recreate_check >= DRIVER_RECREATE_CHECK_COUNT):
                 print("🔄 Плановое пересоздание...")
@@ -352,7 +364,6 @@ def main():
                 last_driver_recreate_check = update_count
                 continue
             
-            # --- ОЧИСТКА ---
             if (current_time - last_cleanup_time >= CLEANUP_INTERVAL or 
                 update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT):
                 print("🔄 Очистка памяти...")
@@ -360,32 +371,28 @@ def main():
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
             
-            # --- ОБНОВЛЕНИЕ ---
             update_result = update_page_fast(driver)
             if update_result == "CRASH":
                 driver = recreate_driver(driver)
                 continue
             
-            # --- КЛИК ---
             click_result = click_update_button(driver)
             if click_result == "CRASH":
                 driver = recreate_driver(driver)
                 continue
             
-            # --- КУРС ---
             buy_rate, sell_rate = get_rate_with_selenium(driver)
             
             if buy_rate == "CRASH" and sell_rate == "CRASH":
                 driver = recreate_driver(driver)
                 continue
 
-            if buy_rate is not None:
+            if buy_rate is not None and sell_rate is not None:
                 update_count += 1
                 is_profitable = check_conditions(buy_rate, sell_rate)
 
                 print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
 
-                # --- БОТ ЖИВ ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -404,7 +411,6 @@ def main():
                     next_alive_interval = get_random_alive_interval()
                     print(f"💚 'Бот жив' #{alive_count}")
 
-                # --- УВЕДОМЛЕНИЯ ---
                 if sell_rate > 0 and is_profitable:
                     notification_count += 1
                     print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! #{notification_count}")
@@ -422,14 +428,10 @@ def main():
                         wait = int(NOTIFICATION_INTERVAL - (current_time - last_notification_time))
                         print(f"⏳ Ждем {wait} сек")
                 else:
-                    if sell_rate > 0:
-                        print(f"⏳ Условия не выполнены")
-                    else:
-                        print(f"⚠️ Данные неполные")
+                    print(f"⏳ Условия не выполнены")
             else:
                 print("❌ Не удалось получить курс")
 
-            # --- ЗАДЕРЖКА ---
             elapsed = time.time() - start_time
             delay = max(1, get_random_delay() - elapsed)
             
