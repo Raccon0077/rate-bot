@@ -181,19 +181,6 @@ def is_driver_crashed(exception):
     return "crashed" in error or "invalid session id" in error or "no such window" in error
 
 
-def update_page_fast(driver):
-    try:
-        driver.execute_script("location.reload();")
-        time.sleep(0.5)
-        return True
-    except Exception as e:
-        if is_driver_crashed(e):
-            print(f"   💥 КРАШ при обновлении: {e}")
-            return "CRASH"
-        print(f"   ⚠️ Ошибка обновления: {e}")
-        return False
-
-
 def click_update_button(driver):
     try:
         driver.execute_script("""
@@ -229,7 +216,7 @@ def click_update_button(driver):
 
 
 def get_rate_with_selenium(driver):
-    """Получение курса с исправленными регулярками"""
+    """Получение курса с принудительным переходом на страницу"""
     global last_buy_rate, last_sell_rate, last_rate_time
     
     current_time = time.time()
@@ -238,6 +225,16 @@ def get_rate_with_selenium(driver):
         return last_buy_rate, last_sell_rate
     
     try:
+        # 🔥 ПРИНУДИТЕЛЬНО ПЕРЕХОДИМ НА СТРАНИЦУ
+        driver.get(APP_URL)
+        time.sleep(1)
+        
+        # Кликаем кнопку
+        click_update_button(driver)
+        
+        # Ждем обновления
+        time.sleep(1)
+        
         # Получаем HTML
         html = driver.execute_script("return document.documentElement.outerHTML;")
         
@@ -245,23 +242,17 @@ def get_rate_with_selenium(driver):
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(html)
         
-        # ========================================
-        # 🔧 ИСПРАВЛЕННЫЕ РЕГУЛЯРНЫЕ ВЫРАЖЕНИЯ
-        # ========================================
-        
-        # Ищем цифры рядом со словом "Покупка"
+        # Ищем курс
         buy_match = re.search(r'Покупка\s*[:]?\s*([0-9]+)', html, re.IGNORECASE)
         if not buy_match:
             buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
         
-        # Ищем цифры рядом со словом "Продажа" (разные варианты)
         sell_match = re.search(r'Продажа\s*[:]?\s*[0-9]+\s*=>\s*([0-9]+)', html, re.IGNORECASE)
         if not sell_match:
             sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
         if not sell_match:
             sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
         
-        # 🔍 ВЫВОДИМ РЕЗУЛЬТАТЫ
         print(f"   🔍 buy_match: {buy_match.group(1) if buy_match else '❌'}")
         print(f"   🔍 sell_match: {sell_match.group(1) if sell_match else '❌'}")
         
@@ -276,9 +267,9 @@ def get_rate_with_selenium(driver):
             print(f"   ✅ Курс: покупка {buy_rate}, продажа {sell_rate}")
             return buy_rate, sell_rate
         
-        # Пробуем найти через поиск по всему тексту
+        # Если не нашли, выводим текст
         text = driver.find_element(By.TAG_NAME, "body").text
-        print(f"   📄 Текст страницы (первые 200 символов): {text[:200]}")
+        print(f"   📄 Текст страницы: {text[:500]}")
         
         return None, None
     except Exception as e:
@@ -370,16 +361,6 @@ def main():
                 clear_browser_data(driver)
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
-            
-            update_result = update_page_fast(driver)
-            if update_result == "CRASH":
-                driver = recreate_driver(driver)
-                continue
-            
-            click_result = click_update_button(driver)
-            if click_result == "CRASH":
-                driver = recreate_driver(driver)
-                continue
             
             buy_rate, sell_rate = get_rate_with_selenium(driver)
             
