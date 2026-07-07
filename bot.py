@@ -7,11 +7,12 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 import vk_api
 from vk_api.utils import get_random_id
 from webdriver_manager.chrome import ChromeDriverManager
-from concurrent.futures import ThreadPoolExecutor
 
 print("🚀 Бот запускается...")
 
@@ -27,28 +28,27 @@ USER_IDS = [
 ]
 
 BUY_THRESHOLD = 50000
-SELL_THRESHOLD = 70000
+SELL_THRESHOLD = 60000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
 # --- ИНТЕРВАЛЫ ---
-MIN_CHECK_INTERVAL = 4
-MAX_CHECK_INTERVAL = 7
+MIN_CHECK_INTERVAL = 5
+MAX_CHECK_INTERVAL = 10
 NOTIFICATION_INTERVAL = 1
+MIN_ALIVE_INTERVAL = 300
+MAX_ALIVE_INTERVAL = 600
 
-MIN_ALIVE_INTERVAL = 3600
-MAX_ALIVE_INTERVAL = 7200
-
-CLEANUP_INTERVAL = 900
-CLEANUP_CHECK_COUNT = 100
-
-DRIVER_RECREATE_INTERVAL = 1800
-DRIVER_RECREATE_CHECK_COUNT = 200
+# --- ОЧИСТКА ПАМЯТИ БЕЗ ПЕРЕЗАПУСКА ---
+CLEANUP_INTERVAL = 600  # 10 минут (600 секунд)
+# Или по количеству проверок:
+CLEANUP_CHECK_COUNT = 50  # Каждые 50 проверок
 
 STATE_FILE = "bot_state.pkl"
 
 print("📌 Настройки загружены")
 
+# --- ИНИЦИАЛИЗАЦИЯ VK ---
 try:
     vk_session = vk_api.VkApi(token=GROUP_TOKEN)
     vk = vk_session.get_api()
@@ -63,13 +63,6 @@ last_alive_time = time.time()
 last_notification_time = 0
 last_cleanup_time = time.time()
 last_cleanup_check = 0
-last_driver_recreate_time = time.time()
-last_driver_recreate_check = 0
-
-last_buy_rate = None
-last_sell_rate = None
-last_rate_time = 0
-RATE_CACHE_TTL = 2
 
 
 def load_state():
@@ -97,6 +90,7 @@ def send_vk_message_to_admin(text):
             random_id=get_random_id(),
             message=text
         )
+        print(f"   ✅ Отправлено админу {ADMIN_ID}")
         return True
     except Exception as e:
         print(f"   ❌ Ошибка отправки админу: {e}")
@@ -104,22 +98,21 @@ def send_vk_message_to_admin(text):
 
 
 def send_vk_message_to_all(text):
-    def send_to_user(user_id):
+    success_count = 0
+    fail_count = 0
+    for user_id in USER_IDS:
         try:
             vk.messages.send(
                 user_id=user_id,
                 random_id=get_random_id(),
                 message=text
             )
-            return True
-        except:
-            return False
-    
-    with ThreadPoolExecutor(max_workers=len(USER_IDS)) as executor:
-        results = list(executor.map(send_to_user, USER_IDS))
-    
-    success_count = sum(results)
-    print(f"📊 Отправлено {success_count}/{len(USER_IDS)} сообщений")
+            print(f"   ✅ Отправлено пользователю {user_id}")
+            success_count += 1
+        except Exception as e:
+            print(f"   ❌ Ошибка отправки пользователю {user_id}: {e}")
+            fail_count += 1
+    print(f"📊 Итог: успешно {success_count}, ошибок {fail_count}")
     return success_count > 0
 
 
@@ -138,209 +131,83 @@ def get_driver():
     options.add_argument("--disable-plugins")
     options.add_argument("--disable-images")
     options.add_argument("--memory-pressure-off")
-    options.add_argument("--max_old_space_size=512")
-    options.add_argument("--js-flags=--max-old-space-size=512")
-    options.add_argument("--disable-background-networking")
-    options.add_argument("--disable-sync")
-    options.add_argument("--disable-default-apps")
-    options.add_argument("--disable-translate")
-    options.add_argument("--disable-features=TranslateUI")
-    options.add_argument("--disable-ipc-flooding-protection")
-    options.add_argument("--disable-renderer-backgrounding")
-    options.add_argument("--disable-background-timer-throttling")
-    options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--disable-setuid-sandbox")
     
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
-        driver.set_page_load_timeout(10)
-        driver.implicitly_wait(3)
+        print("✅ Драйвер создан")
         return driver
     except Exception as e:
         print(f"❌ Ошибка создания драйвера: {e}")
         raise
 
 
-def recreate_driver(driver):
-    print("   🔄 ПЕРЕСОЗДАНИЕ ДРАЙВЕРА...")
-    try:
-        driver.quit()
-    except:
-        pass
-    time.sleep(2)
-    new_driver = get_driver()
-    new_driver.get(APP_URL)
-    time.sleep(1)
-    print("   ✅ Драйвер пересоздан")
-    return new_driver
-
-
-def is_driver_crashed(exception):
-    error = str(exception).lower()
-    return "crashed" in error or "invalid session id" in error or "no such window" in error
-
-
-def click_update_button(driver):
-    """Нажатие кнопки 'Обновить курс'"""
-    try:
-        driver.execute_script("""
-            var btns = document.querySelectorAll('*');
-            for(var i=0; i<btns.length; i++) {
-                if(btns[i].textContent && btns[i].textContent.includes('Обновить курс')) {
-                    btns[i].click();
-                    return true;
-                }
-            }
-            return false;
-        """)
-        print("   ✅ Кнопка 'Обновить курс' нажата")
-        time.sleep(0.5)
-        return True
-    except Exception as e:
-        if is_driver_crashed(e):
-            print(f"   💥 КРАШ: {e}")
-            return "CRASH"
-        
-        try:
-            buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
-            if buttons:
-                buttons[0].click()
-                print("   ✅ Кнопка 'Обновить курс' нажата (Selenium)")
-                time.sleep(0.5)
-                return True
-        except:
-            pass
-        
-        print("   ⚠️ Кнопка 'Обновить курс' не найдена")
-        return False
-
-
-def click_learn_button(driver):
-    """Нажатие кнопки 'Узнать курс'"""
-    try:
-        driver.execute_script("""
-            var btns = document.querySelectorAll('*');
-            for(var i=0; i<btns.length; i++) {
-                if(btns[i].textContent && btns[i].textContent.includes('Узнать курс')) {
-                    btns[i].click();
-                    return true;
-                }
-            }
-            return false;
-        """)
-        print("   ✅ Кнопка 'Узнать курс' нажата")
-        time.sleep(0.5)
-        return True
-    except Exception as e:
-        if is_driver_crashed(e):
-            print(f"   💥 КРАШ: {e}")
-            return "CRASH"
-        
-        try:
-            buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
-            if buttons:
-                buttons[0].click()
-                print("   ✅ Кнопка 'Узнать курс' нажата (Selenium)")
-                time.sleep(0.5)
-                return True
-        except:
-            pass
-        
-        print("   ⚠️ Кнопка 'Узнать курс' не найдена")
-        return False
-
-
-def get_rate_with_selenium(driver):
-    """Получение курса: сначала Узнать курс, потом Обновить курс"""
-    global last_buy_rate, last_sell_rate, last_rate_time
-    
-    current_time = time.time()
-    if last_buy_rate and last_sell_rate and (current_time - last_rate_time) < RATE_CACHE_TTL:
-        print("   ⚡ Кэш")
-        return last_buy_rate, last_sell_rate
-    
-    try:
-        # ПЕРЕХОДИМ НА СТРАНИЦУ
-        driver.get(APP_URL)
-        time.sleep(2)
-        
-        # ============================================
-        # ШАГ 1: НАЖИМАЕМ "Узнать курс"
-        # ============================================
-        learn_result = click_learn_button(driver)
-        if learn_result == "CRASH":
-            return "CRASH", "CRASH"
-        
-        # ============================================
-        # ШАГ 2: НАЖИМАЕМ "Обновить курс"
-        # ============================================
-        update_result = click_update_button(driver)
-        if update_result == "CRASH":
-            return "CRASH", "CRASH"
-        
-        # Ждем обновления
-        time.sleep(1)
-        
-        # Получаем HTML
-        html = driver.execute_script("return document.documentElement.outerHTML;")
-        
-        # 🔍 СОХРАНЯЕМ ДЛЯ ОТЛАДКИ
-        with open("debug_page.html", "w", encoding="utf-8") as f:
-            f.write(html)
-        
-        # Ищем курс
-        buy_match = re.search(r'Покупка\s*[:]?\s*([0-9]+)', html, re.IGNORECASE)
-        if not buy_match:
-            buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
-        if not buy_match:
-            buy_match = re.search(r'Куплю[^0-9]*([0-9]+)', html)
-        
-        sell_match = re.search(r'Продажа\s*[:]?\s*[0-9]+\s*=>\s*([0-9]+)', html, re.IGNORECASE)
-        if not sell_match:
-            sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
-        if not sell_match:
-            sell_match = re.search(r'Продажа[^0-9]*([0-9]+)', html)
-        if not sell_match:
-            sell_match = re.search(r'Продам[^0-9]*([0-9]+)', html)
-        
-        print(f"   🔍 buy_match: {buy_match.group(1) if buy_match else '❌'}")
-        print(f"   🔍 sell_match: {sell_match.group(1) if sell_match else '❌'}")
-        
-        if buy_match and sell_match:
-            buy_rate = int(buy_match.group(1))
-            sell_rate = int(sell_match.group(1))
-            
-            last_buy_rate = buy_rate
-            last_sell_rate = sell_rate
-            last_rate_time = current_time
-            
-            print(f"   ✅ Курс: покупка {buy_rate}, продажа {sell_rate}")
-            return buy_rate, sell_rate
-        
-        # Если не нашли, выводим текст
-        text = driver.find_element(By.TAG_NAME, "body").text
-        print(f"   📄 Текст страницы: {text[:500]}")
-        
-        return None, None
-    except Exception as e:
-        if is_driver_crashed(e):
-            print(f"   💥 КРАШ: {e}")
-            return "CRASH", "CRASH"
-        print(f"   ❌ Ошибка: {e}")
-        return None, None
-
-
 def clear_browser_data(driver):
+    """Очищает куки и storage"""
     try:
-        driver.execute_script("localStorage.clear(); sessionStorage.clear();")
         driver.delete_all_cookies()
+        print("   🗑️ Куки удалены")
     except:
         pass
+    try:
+        driver.execute_script("window.localStorage.clear();")
+        print("   🗑️ LocalStorage очищен")
+    except:
+        pass
+    try:
+        driver.execute_script("window.sessionStorage.clear();")
+        print("   🗑️ SessionStorage очищен")
+    except:
+        pass
+
+
+def deep_cleanup(driver):
+    """Глубокая очистка: сброс кэша и перезагрузка страницы"""
+    try:
+        driver.execute_script("window.location.reload(true);")
+        print("🔄 Страница перезагружена с очисткой кэша")
+        time.sleep(1)
+    except:
+        pass
+    clear_browser_data(driver)
+    return driver
+
+
+def parse_rate_from_html(html):
+    buy_rate = None
+    sell_rate = None
+    
+    buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
+    if buy_match:
+        buy_rate = int(buy_match.group(1))
+        print(f"   Покупка: {buy_rate}")
+    
+    sell_match = re.search(r'Продажа[^0-9]*💎100[^0-9]*=>?[^0-9]*🌕([0-9]+)', html)
+    if sell_match:
+        sell_rate = int(sell_match.group(1))
+        print(f"   Продажа: {sell_rate}")
+    
+    if not sell_rate:
+        sell_match = re.search(r'Продажа[^0-9]*=>[^0-9]*([0-9]+)', html)
+        if sell_match:
+            sell_rate = int(sell_match.group(1))
+            print(f"   Продажа (упрощ.): {sell_rate}")
+    
+    if buy_rate and sell_rate:
+        return buy_rate, sell_rate
+    
+    if buy_rate:
+        return buy_rate, 0
+    
+    return None, None
 
 
 def check_conditions(buy_rate, sell_rate):
-    return buy_rate < BUY_THRESHOLD or sell_rate > SELL_THRESHOLD
+    buy_condition = buy_rate < BUY_THRESHOLD
+    sell_condition = sell_rate > SELL_THRESHOLD
+    result = buy_condition or sell_condition
+    print(f"   📋 Проверка условий: покупка {buy_rate} < {BUY_THRESHOLD} = {buy_condition}, продажа {sell_rate} > {SELL_THRESHOLD} = {sell_condition}, результат: {result}")
+    return result
 
 
 def get_random_delay():
@@ -352,23 +219,23 @@ def get_random_alive_interval():
 
 
 def main():
-    global update_count, notification_count, last_alive_time, last_notification_time
-    global last_cleanup_time, last_cleanup_check, last_driver_recreate_time, last_driver_recreate_check
+    global update_count, notification_count, last_alive_time, last_notification_time, last_cleanup_time, last_cleanup_check
 
     print("🤖 Бот для отслеживания курса осколков")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
-    print(f"📱 Получатели: {len(USER_IDS)}")
+    print(f"📱 Получатели: {USER_IDS}")
     print("=" * 60)
-    print(f"🟢 Покупка < {BUY_THRESHOLD}")
-    print(f"🔴 Продажа > {SELL_THRESHOLD}")
+    print("📊 УСЛОВИЯ (ИЛИ):")
+    print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
+    print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print(f"⏰ Интервал: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
+    print("📢 ИНТЕРВАЛЫ ПРОВЕРКИ:")
+    print(f"   - Случайная задержка {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print("=" * 60)
-    print("🔧 ПОРЯДОК ДЕЙСТВИЙ:")
-    print("   1️⃣ Нажать 'Узнать курс'")
-    print("   2️⃣ Нажать 'Обновить курс'")
-    print("   3️⃣ Парсить курс")
+    print(f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска):")
+    print(f"   - Каждые {CLEANUP_INTERVAL//60} минут")
+    print(f"   - Или каждые {CLEANUP_CHECK_COUNT} проверок")
     print("=" * 60)
 
     state = load_state()
@@ -377,59 +244,107 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН!\n"
-            f"🟢 Покупка < {BUY_THRESHOLD}\n"
-            f"🔴 Продажа > {SELL_THRESHOLD}\n"
-            f"⏰ {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек"
+            f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ!\n"
+            f"\n"
+            f"📊 Отслеживание курса осколков\n"
+            f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
+            f"🔴 Продажа: выше {SELL_THRESHOLD}"
         )
         send_vk_message_to_admin(start_message)
         state["first_start_done"] = True
         save_state(state)
+        print("💚 Отправлено сообщение о запуске бота (только админу)")
 
     next_alive_interval = get_random_alive_interval()
+    print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
-    print("\n🌐 Запуск браузера...")
+    print("\n🌐 Запускаем браузер (он останется открытым)...")
     driver = get_driver()
+    print("🌐 Открываем страницу...")
     driver.get(APP_URL)
     time.sleep(2)
 
-    print("\n🚀 Мониторинг запущен!")
-    print("=" * 60)
-
     while True:
         try:
-            start_time = time.time()
-            print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка...")
+            print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
             
+            # --- ПРОВЕРКА ОЧИСТКИ ПАМЯТИ ---
             current_time = time.time()
+            need_cleanup = False
+            reason = ""
             
-            if (current_time - last_driver_recreate_time >= DRIVER_RECREATE_INTERVAL or 
-                update_count - last_driver_recreate_check >= DRIVER_RECREATE_CHECK_COUNT):
-                print("🔄 Плановое пересоздание...")
-                driver = recreate_driver(driver)
-                last_driver_recreate_time = current_time
-                last_driver_recreate_check = update_count
-                continue
+            # По времени
+            if current_time - last_cleanup_time >= CLEANUP_INTERVAL:
+                need_cleanup = True
+                reason = f"прошло {CLEANUP_INTERVAL//60} минут"
             
-            if (current_time - last_cleanup_time >= CLEANUP_INTERVAL or 
-                update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT):
-                print("🔄 Очистка памяти...")
-                clear_browser_data(driver)
+            # По количеству проверок
+            if update_count - last_cleanup_check >= CLEANUP_CHECK_COUNT:
+                need_cleanup = True
+                reason = f"выполнено {CLEANUP_CHECK_COUNT} проверок"
+            
+            if need_cleanup:
+                print(f"🔄 Очистка памяти ({reason})...")
+                
+                # Отправляем сообщение админу
+                cleanup_message = (
+                    f"💾 ОЧИСТКА ПАМЯТИ (без перезапуска)!\n"
+                    f"\n"
+                    f"📊 Причина: {reason}\n"
+                    f"📊 Проверок: {update_count}\n"
+                    f"\n"
+                    f"🔄 Очищены куки и storage\n"
+                    f"🔄 Страница перезагружена\n"
+                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                )
+                send_vk_message_to_admin(cleanup_message)
+                print("💚 Отправлено сообщение админу об очистке памяти")
+                
+                driver = deep_cleanup(driver)
                 last_cleanup_time = current_time
                 last_cleanup_check = update_count
+                print("✅ Память очищена")
+            else:
+                clear_browser_data(driver)
             
-            buy_rate, sell_rate = get_rate_with_selenium(driver)
+            # --- ОБНОВЛЯЕМ СТРАНИЦУ ---
+            print("🔄 Обновляем страницу...")
+            driver.refresh()
+            time.sleep(0.3)
             
-            if buy_rate == "CRASH" and sell_rate == "CRASH":
-                driver = recreate_driver(driver)
-                continue
+            print("🔄 Нажимаем 'Узнать курс'...")
+            try:
+                learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+                learn_btn.click()
+                print("   ✅ Нажата кнопка 'Узнать курс'")
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
+            
+            print("🔄 Нажимаем 'Обновить курс'...")
+            try:
+                update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+                update_btn.click()
+                print("   ✅ Нажата кнопка 'Обновить курс'")
+                time.sleep(0.2)
+            except Exception as e:
+                print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
+            
+            html = driver.page_source
+            print(f"📄 HTML получен, длина: {len(html)}")
+            
+            buy_rate, sell_rate = parse_rate_from_html(html)
 
-            if buy_rate is not None and sell_rate is not None:
+            if buy_rate is not None:
                 update_count += 1
+                
                 is_profitable = check_conditions(buy_rate, sell_rate)
 
-                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate}")
+                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate if sell_rate else 0}")
 
+                current_time = time.time()
+                
+                # --- "БОТ ЖИВ" ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -437,60 +352,64 @@ def main():
                     save_state(state)
                     
                     alive_message = (
-                        f"✅ БОТ ЖИВ!\n"
+                        f"✅ Бот жив и работает!\n"
+                        f"\n"
                         f"📊 Проверок: {update_count}\n"
-                        f"🟢 Покупка: {buy_rate}\n"
-                        f"🔴 Продажа: {sell_rate}\n"
+                        f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                        f"🔴 Продажа: 100 => {sell_rate if sell_rate else '???'} оск.\n"
+                        f"\n"
                         f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                     )
                     send_vk_message_to_admin(alive_message)
                     last_alive_time = current_time
                     next_alive_interval = get_random_alive_interval()
-                    print(f"💚 'Бот жив' #{alive_count}")
+                    print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
+                    print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
-                if sell_rate > 0 and is_profitable:
-                    notification_count += 1
-                    print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! #{notification_count}")
+                # --- УВЕДОМЛЕНИЯ ---
+                if buy_rate and sell_rate:
+                    if is_profitable:
+                        notification_count += 1
+                        print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
 
-                    if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
-                        message = (
-                            f"🚨 ВЫГОДНЫЙ КУРС!\n"
-                            f"🟢 Покупка: {buy_rate}\n"
-                            f"🔴 Продажа: {sell_rate}\n"
-                            f"⏰ {datetime.now().strftime('%H:%M:%S')}"
-                        )
-                        send_vk_message_to_all(message)
-                        last_notification_time = current_time
+                        current_time = time.time()
+                        if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
+                            message = (
+                                f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
+                                f"\n"
+                                f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                                f"🔴 Продажа: 100 => {sell_rate} оск."
+                            )
+
+                            send_vk_message_to_all(message)
+                            last_notification_time = current_time
+                            print(f"📊 Следующее уведомление через {NOTIFICATION_INTERVAL} сек")
+                        else:
+                            wait_time = int(NOTIFICATION_INTERVAL - (current_time - last_notification_time))
+                            print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
                     else:
-                        wait = int(NOTIFICATION_INTERVAL - (current_time - last_notification_time))
-                        print(f"⏳ Ждем {wait} сек")
+                        print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
                 else:
-                    print(f"⏳ Условия не выполнены")
+                    print("⚠️ Не все данные получены")
             else:
                 print("❌ Не удалось получить курс")
 
-            elapsed = time.time() - start_time
-            delay = max(1, get_random_delay() - elapsed)
-            
-            print(f"⚡ За {elapsed:.2f} сек, следующая через {delay:.1f} сек")
+            delay = get_random_delay()
+            print(f"🐢 Обычная проверка (интервал {delay} сек)")
+            print(f"⏳ Следующая проверка через {delay} секунд...")
             time.sleep(delay)
 
         except KeyboardInterrupt:
             print("\n⏹ Остановка...")
             break
         except Exception as e:
-            print(f"❌ Ошибка: {e}")
-            
-            if is_driver_crashed(e):
-                print("💥 КРАШ! Пересоздаем...")
-                driver = recreate_driver(driver)
-            else:
-                try:
-                    driver = recreate_driver(driver)
-                except:
-                    driver = get_driver()
-                    driver.get(APP_URL)
-                    time.sleep(1)
+            print(f"❌ Ошибка в цикле: {e}")
+            # При ошибке пробуем перезагрузить страницу
+            try:
+                driver.get(APP_URL)
+                time.sleep(2)
+            except:
+                pass
             time.sleep(get_random_delay())
     
     try:
