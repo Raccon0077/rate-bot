@@ -33,16 +33,16 @@ SELL_THRESHOLD = 70000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
-# --- ИНТЕРВАЛЫ (ОПТИМИЗИРОВАННЫЕ) ---
-MIN_CHECK_INTERVAL = 4      # 4 секунды минимум
-MAX_CHECK_INTERVAL = 8      # 8 секунд максимум
-NOTIFICATION_INTERVAL = 0.5 # 0.5 секунды между уведомлениями
-MIN_ALIVE_INTERVAL = 300    # 5 минут
-MAX_ALIVE_INTERVAL = 1800   # 30 минут
+# --- ИНТЕРВАЛЫ ---
+MIN_CHECK_INTERVAL = 4
+MAX_CHECK_INTERVAL = 8
+NOTIFICATION_INTERVAL = 0.5
+MIN_ALIVE_INTERVAL = 300
+MAX_ALIVE_INTERVAL = 1800
 
-# --- ОЧИСТКА ПАМЯТИ БЕЗ ПЕРЕЗАПУСКА ---
-CLEANUP_INTERVAL = 600  # 10 минут
-CLEANUP_CHECK_COUNT = 50  # Каждые 50 проверок
+# --- ОЧИСТКА ПАМЯТИ ---
+CLEANUP_INTERVAL = 600
+CLEANUP_CHECK_COUNT = 50
 
 STATE_FILE = "bot_state.pkl"
 
@@ -98,7 +98,6 @@ def send_vk_message_to_admin(text):
 
 
 def send_vk_message_to_all(text):
-    """Параллельная отправка сообщений всем пользователям"""
     def send_to_user(user_id):
         try:
             vk.messages.send(
@@ -136,10 +135,14 @@ def get_driver():
     options.add_argument("--disable-plugins")
     options.add_argument("--disable-images")
     options.add_argument("--memory-pressure-off")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-setuid-sandbox")
     
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
+        driver.set_page_load_timeout(10)
+        driver.implicitly_wait(3)
         print("✅ Драйвер создан")
         return driver
     except Exception as e:
@@ -147,8 +150,28 @@ def get_driver():
         raise
 
 
+def recreate_driver(driver):
+    """Пересоздание драйвера при краше"""
+    print("   🔄 ПЕРЕСОЗДАНИЕ ДРАЙВЕРА...")
+    try:
+        driver.quit()
+    except:
+        pass
+    time.sleep(2)
+    new_driver = get_driver()
+    new_driver.get(APP_URL)
+    time.sleep(1)
+    print("   ✅ Драйвер пересоздан")
+    return new_driver
+
+
+def is_driver_crashed(exception):
+    """Проверяет, крашнулся ли браузер"""
+    error = str(exception).lower()
+    return "crashed" in error or "invalid session id" in error or "no such window" in error or "tab crashed" in error
+
+
 def clear_browser_data(driver):
-    """Очищает куки и storage"""
     try:
         driver.delete_all_cookies()
         print("   🗑️ Куки удалены")
@@ -167,7 +190,6 @@ def clear_browser_data(driver):
 
 
 def deep_cleanup(driver):
-    """Глубокая очистка: сброс кэша и перезагрузка страницы"""
     try:
         driver.execute_script("window.location.reload(true);")
         print("🔄 Страница перезагружена с очисткой кэша")
@@ -226,7 +248,7 @@ def get_random_alive_interval():
 def main():
     global update_count, notification_count, last_alive_time, last_notification_time, last_cleanup_time, last_cleanup_check
 
-    print("🤖 Бот для отслеживания курса осколков (ОПТИМИЗИРОВАННЫЙ)")
+    print("🤖 Бот для отслеживания курса осколков (С АВТОВОССТАНОВЛЕНИЕМ)")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
     print(f"📱 Получатели: {USER_IDS}")
@@ -235,13 +257,12 @@ def main():
     print(f"   1️⃣ Покупка < {BUY_THRESHOLD}")
     print(f"   2️⃣ Продажа > {SELL_THRESHOLD}")
     print("=" * 60)
-    print("📢 ОПТИМИЗИРОВАННЫЕ ИНТЕРВАЛЫ:")
+    print("📢 ИНТЕРВАЛЫ:")
     print(f"   - Проверка курса: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print(f"   - 'Бот жив': {MIN_ALIVE_INTERVAL//60}-{MAX_ALIVE_INTERVAL//60} минут")
-    print(f"   - Уведомления: не чаще {NOTIFICATION_INTERVAL} сек")
     print("=" * 60)
-    print("⚡ ПАРАЛЛЕЛЬНАЯ ОТПРАВКА:")
-    print(f"   - Сообщения отправляются одновременно всем {len(USER_IDS)} получателям")
+    print("🔄 АВТОВОССТАНОВЛЕНИЕ:")
+    print("   - При краше браузера драйвер пересоздается автоматически")
     print("=" * 60)
 
     state = load_state()
@@ -250,13 +271,12 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ! (ОПТИМИЗИРОВАННЫЙ)\n"
+            f"🚀 БОТ ЗАПУЩЕН И РАБОТАЕТ!\n"
             f"\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
             f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
-            f"⚡ Проверка: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек\n"
-            f"⚡ Параллельная отправка сообщений"
+            f"🔄 Автовосстановление при краше браузера"
         )
         send_vk_message_to_admin(start_message)
         state["first_start_done"] = True
@@ -266,9 +286,8 @@ def main():
     next_alive_interval = get_random_alive_interval()
     print(f"⏳ Следующее 'Бот жив' через {next_alive_interval // 60} минут")
 
-    print("\n🌐 Запускаем браузер (он останется открытым)...")
+    print("\n🌐 Запускаем браузер...")
     driver = get_driver()
-    print("🌐 Открываем страницу...")
     driver.get(APP_URL)
     time.sleep(2)
 
@@ -297,13 +316,9 @@ def main():
                     f"\n"
                     f"📊 Причина: {reason}\n"
                     f"📊 Проверок: {update_count}\n"
-                    f"\n"
-                    f"🔄 Очищены куки и storage\n"
-                    f"🔄 Страница перезагружена\n"
                     f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                 )
                 send_vk_message_to_admin(cleanup_message)
-                print("💚 Отправлено сообщение админу об очистке памяти")
                 
                 driver = deep_cleanup(driver)
                 last_cleanup_time = current_time
@@ -313,31 +328,63 @@ def main():
                 clear_browser_data(driver)
             
             # --- ОБНОВЛЯЕМ СТРАНИЦУ ---
-            print("🔄 Обновляем страницу...")
-            driver.refresh()
-            time.sleep(0.3)
-            
-            print("🔄 Нажимаем 'Узнать курс'...")
             try:
-                learn_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Узнать курс')]")
+                print("🔄 Обновляем страницу...")
+                driver.refresh()
+                time.sleep(0.3)
+            except Exception as e:
+                if is_driver_crashed(e):
+                    print(f"💥 КРАШ при обновлении, пересоздаем драйвер...")
+                    driver = recreate_driver(driver)
+                    continue
+                else:
+                    raise
+            
+            # --- НАЖИМАЕМ "Узнать курс" ---
+            try:
+                print("🔄 Нажимаем 'Узнать курс'...")
+                learn_btn = WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Узнать курс')]"))
+                )
                 learn_btn.click()
                 print("   ✅ Нажата кнопка 'Узнать курс'")
                 time.sleep(0.2)
             except Exception as e:
+                if is_driver_crashed(e):
+                    print(f"💥 КРАШ при клике 'Узнать курс', пересоздаем драйвер...")
+                    driver = recreate_driver(driver)
+                    continue
                 print(f"   ⚠️ Кнопка 'Узнать курс' не найдена: {e}")
             
-            print("🔄 Нажимаем 'Обновить курс'...")
+            # --- НАЖИМАЕМ "Обновить курс" ---
             try:
-                update_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Обновить курс')]")
+                print("🔄 Нажимаем 'Обновить курс'...")
+                update_btn = WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Обновить курс')]"))
+                )
                 update_btn.click()
                 print("   ✅ Нажата кнопка 'Обновить курс'")
                 time.sleep(0.2)
             except Exception as e:
+                if is_driver_crashed(e):
+                    print(f"💥 КРАШ при клике 'Обновить курс', пересоздаем драйвер...")
+                    driver = recreate_driver(driver)
+                    continue
                 print(f"   ⚠️ Кнопка 'Обновить курс' не найдена: {e}")
             
-            html = driver.page_source
-            print(f"📄 HTML получен, длина: {len(html)}")
+            # --- ПОЛУЧАЕМ HTML ---
+            try:
+                html = driver.page_source
+                print(f"📄 HTML получен, длина: {len(html)}")
+            except Exception as e:
+                if is_driver_crashed(e):
+                    print(f"💥 КРАШ при получении HTML, пересоздаем драйвер...")
+                    driver = recreate_driver(driver)
+                    continue
+                else:
+                    raise
             
+            # --- ПАРСИМ КУРС ---
             buy_rate, sell_rate = parse_rate_from_html(html)
 
             if buy_rate is not None:
@@ -349,7 +396,7 @@ def main():
 
                 current_time = time.time()
                 
-                # --- "БОТ ЖИВ" (5-30 минут) ---
+                # --- "БОТ ЖИВ" ---
                 if current_time - last_alive_time >= next_alive_interval:
                     alive_count += 1
                     state = load_state()
@@ -362,7 +409,6 @@ def main():
                         f"📊 Проверок: {update_count}\n"
                         f"🟢 Покупка: {buy_rate} => 100 оск.\n"
                         f"🔴 Продажа: 100 => {sell_rate if sell_rate else '???'} оск.\n"
-                        f"\n"
                         f"⏰ {datetime.now().strftime('%H:%M:%S')}"
                     )
                     send_vk_message_to_admin(alive_message)
@@ -409,11 +455,16 @@ def main():
             break
         except Exception as e:
             print(f"❌ Ошибка в цикле: {e}")
-            try:
-                driver.get(APP_URL)
-                time.sleep(2)
-            except:
-                pass
+            
+            if is_driver_crashed(e):
+                print("💥 КРАШ БРАУЗЕРА! Пересоздаем драйвер...")
+                driver = recreate_driver(driver)
+            else:
+                try:
+                    driver.get(APP_URL)
+                    time.sleep(2)
+                except:
+                    driver = recreate_driver(driver)
             time.sleep(get_random_delay())
     
     try:
