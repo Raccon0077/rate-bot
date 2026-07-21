@@ -35,11 +35,11 @@ SELL_THRESHOLD = 70000
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
 # --- ИНТЕРВАЛЫ ---
-MIN_CHECK_INTERVAL = 3        # Минимум 3 секунды
-MAX_CHECK_INTERVAL = 6        # Максимум 6 секунд
+MIN_CHECK_INTERVAL = 5        # Увеличил до 5 секунд для стабильности
+MAX_CHECK_INTERVAL = 8        # Увеличил до 8 секунд
 NOTIFICATION_INTERVAL = 0.5
-MIN_ALIVE_INTERVAL = 300      # 5 минут
-MAX_ALIVE_INTERVAL = 1800     # 30 минут
+MIN_ALIVE_INTERVAL = 300
+MAX_ALIVE_INTERVAL = 1800
 
 STATE_FILE = "bot_state.pkl"
 LAST_NOTIFICATION_FILE = "last_notification.pkl"
@@ -189,6 +189,11 @@ def get_driver():
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-setuid-sandbox")
     
+    # Дополнительные опции для стабильности
+    options.add_argument("--disable-logging")
+    options.add_argument("--log-level=3")
+    options.add_argument("--silent")
+    
     # Ускоряем загрузку
     prefs = {
         "profile.managed_default_content_settings.images": 2,
@@ -225,18 +230,35 @@ def recreate_driver(driver):
     except:
         pass
     
-    time.sleep(2)
+    time.sleep(3)  # Увеличил до 3 секунд
     
     # Создаем новый драйвер
     new_driver = get_driver()
-    new_driver.get(APP_URL)
-    time.sleep(1.5)
-    print("   ✅ Драйвер пересоздан")
-    return new_driver
+    try:
+        new_driver.get(APP_URL)
+        time.sleep(2)
+        print("   ✅ Драйвер пересоздан")
+        return new_driver
+    except Exception as e:
+        print(f"   ❌ Ошибка при загрузке страницы: {e}")
+        time.sleep(2)
+        # Пробуем еще раз
+        try:
+            new_driver.get(APP_URL)
+            time.sleep(2)
+            return new_driver
+        except:
+            print("   ❌ КРИТИЧЕСКАЯ ОШИБКА! Возвращаем новый драйвер")
+            return new_driver
 
 def is_driver_crashed(exception):
     error = str(exception).lower()
-    return "crashed" in error or "invalid session id" in error or "no such window" in error or "tab crashed" in error
+    return ("crashed" in error or 
+            "invalid session" in error or 
+            "no such window" in error or 
+            "tab crashed" in error or
+            "disconnected" in error or
+            "cannot connect" in error)
 
 # --- БЫСТРЫЙ ПАРСИНГ ---
 def parse_rate_from_html(html):
@@ -278,9 +300,17 @@ def get_rate_fast(driver):
     start_time = time.time()
     
     try:
+        # ПРОВЕРКА: жив ли драйвер
+        try:
+            driver.current_url
+        except Exception as e:
+            if is_driver_crashed(e):
+                print("💥 ДРАЙВЕР МЕРТВ!")
+                return None, None
+        
         # 1. Обновляем страницу
         driver.refresh()
-        time.sleep(0.1)
+        time.sleep(0.2)
         
         # 2. Нажимаем "Узнать курс"
         try:
@@ -288,9 +318,12 @@ def get_rate_fast(driver):
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Узнать курс')]"))
             )
             learn_btn.click()
-            time.sleep(0.05)
-        except:
-            pass
+            time.sleep(0.1)
+        except Exception as e:
+            if is_driver_crashed(e):
+                print("💥 КРАШ при клике 'Узнать курс'")
+                return None, None
+            print(f"   ⚠️ Кнопка 'Узнать курс' не найдена")
         
         # 3. Нажимаем "Обновить курс"
         try:
@@ -298,12 +331,21 @@ def get_rate_fast(driver):
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Обновить курс')]"))
             )
             update_btn.click()
-            time.sleep(0.1)
-        except:
-            pass
+            time.sleep(0.15)
+        except Exception as e:
+            if is_driver_crashed(e):
+                print("💥 КРАШ при клике 'Обновить курс'")
+                return None, None
+            print(f"   ⚠️ Кнопка 'Обновить курс' не найдена")
         
         # 4. Получаем HTML
-        html = driver.page_source
+        try:
+            html = driver.page_source
+        except Exception as e:
+            if is_driver_crashed(e):
+                print("💥 КРАШ при получении HTML")
+                return None, None
+            raise
         
         # 5. Парсим
         buy_rate, sell_rate = parse_rate_from_html(html)
@@ -331,15 +373,23 @@ def get_rate_with_recovery(driver):
     while retry_count < max_retries:
         try:
             buy_rate, sell_rate = get_rate_fast(current_driver)
-            return buy_rate, sell_rate, current_driver
+            
+            if buy_rate is not None:
+                return buy_rate, sell_rate, current_driver
+            else:
+                # Если вернулись None, значит краш
+                retry_count += 1
+                print(f"💥 КРАШ! Попытка {retry_count}/{max_retries}...")
+                current_driver = recreate_driver(current_driver)
+                continue
+                
         except Exception as e:
             error_msg = str(e).lower()
+            print(f"❌ Исключение: {e}")
             
-            if "crashed" in error_msg or "invalid session" in error_msg or "no such window" in error_msg:
+            if is_driver_crashed(e):
                 retry_count += 1
                 print(f"💥 КРАШ БРАУЗЕРА! Попытка {retry_count}/{max_retries}...")
-                
-                # Пересоздаем драйвер
                 current_driver = recreate_driver(current_driver)
                 
                 if retry_count >= max_retries:
@@ -369,7 +419,6 @@ def main():
     print("⚡ СКОРОСТЬ:")
     print(f"   - Проверка курса: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек")
     print(f"   - Время одной проверки: ~1-2 секунды")
-    print(f"   - Нажатие кнопок: каждые 3-6 секунд")
     print("=" * 60)
     print("🔄 АВТОВОССТАНОВЛЕНИЕ:")
     print("   - При краше браузера автоматическое пересоздание")
@@ -382,7 +431,7 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН (МАКСИМАЛЬНО БЫСТРЫЙ РЕЖИМ + АВТОВОССТАНОВЛЕНИЕ)!\n"
+            f"🚀 БОТ ЗАПУЩЕН!\n"
             f"\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
@@ -402,7 +451,7 @@ def main():
     print("\n🌐 Запускаем браузер...")
     driver = get_driver()
     driver.get(APP_URL)
-    time.sleep(1)
+    time.sleep(2)
 
     while True:
         try:
@@ -413,7 +462,7 @@ def main():
             
             if buy_rate is None:
                 print("❌ Не удалось получить курс, пробуем снова...")
-                time.sleep(2)
+                time.sleep(3)
                 continue
 
             update_count += 1
@@ -520,7 +569,7 @@ def main():
             else:
                 try:
                     driver.get(APP_URL)
-                    time.sleep(1)
+                    time.sleep(2)
                 except:
                     driver = recreate_driver(driver)
             time.sleep(get_random_delay())
