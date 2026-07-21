@@ -326,10 +326,12 @@ def get_rate_with_recovery(driver):
     """
     max_retries = 3
     retry_count = 0
+    current_driver = driver
     
     while retry_count < max_retries:
         try:
-            return get_rate_fast(driver)
+            buy_rate, sell_rate = get_rate_fast(current_driver)
+            return buy_rate, sell_rate, current_driver
         except Exception as e:
             error_msg = str(e).lower()
             
@@ -338,19 +340,19 @@ def get_rate_with_recovery(driver):
                 print(f"💥 КРАШ БРАУЗЕРА! Попытка {retry_count}/{max_retries}...")
                 
                 # Пересоздаем драйвер
-                driver = recreate_driver(driver)
+                current_driver = recreate_driver(current_driver)
                 
                 if retry_count >= max_retries:
                     print("❌ Все попытки восстановления не удались")
-                    return None, None, driver
+                    return None, None, current_driver
                 
                 time.sleep(1)
             else:
                 # Другая ошибка
                 print(f"❌ Ошибка получения курса: {e}")
-                return None, None, driver
+                return None, None, current_driver
     
-    return None, None, driver
+    return None, None, current_driver
 
 def main():
     global update_count, notification_count, last_alive_time, last_notification_time
