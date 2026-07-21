@@ -34,12 +34,12 @@ SELL_THRESHOLD = 70000
 
 APP_URL = "https://well2.activeusers.ru/app.php?act=item&id=14069&sign=fm3sSt9ZgyYAmqEOmHBLD4ipiP9ZmcFlwebNNJQYzRo&vk_access_token_settings=&vk_app_id=6987489&vk_are_notifications_enabled=0&vk_group_id=182985865&vk_is_app_user=1&vk_is_favorite=0&vk_language=ru&vk_platform=desktop_web&vk_ref=other&vk_ts=1781869457&vk_user_id=212887447&vk_viewer_group_role=member&back=act:user"
 
-# --- ИНТЕРВАЛЫ (МАКСИМАЛЬНО БЫСТРЫЕ) ---
+# --- ИНТЕРВАЛЫ ---
 MIN_CHECK_INTERVAL = 3        # Минимум 3 секунды
 MAX_CHECK_INTERVAL = 6        # Максимум 6 секунд
 NOTIFICATION_INTERVAL = 0.5
-MIN_ALIVE_INTERVAL = 300
-MAX_ALIVE_INTERVAL = 1800
+MIN_ALIVE_INTERVAL = 300      # 5 минут
+MAX_ALIVE_INTERVAL = 1800     # 30 минут
 
 STATE_FILE = "bot_state.pkl"
 LAST_NOTIFICATION_FILE = "last_notification.pkl"
@@ -184,7 +184,7 @@ def get_driver():
     options.add_argument("--disable-crash-reporter")
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
-    options.add_argument("--disable-images")  # Отключаем картинки для скорости
+    options.add_argument("--disable-images")
     options.add_argument("--memory-pressure-off")
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-setuid-sandbox")
@@ -200,8 +200,8 @@ def get_driver():
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
-        driver.set_page_load_timeout(5)  # Уменьшаем таймаут
-        driver.implicitly_wait(1)        # Уменьшаем ожидание
+        driver.set_page_load_timeout(5)
+        driver.implicitly_wait(1)
         print("✅ Драйвер создан (оптимизированный)")
         return driver
     except Exception as e:
@@ -209,15 +209,28 @@ def get_driver():
         raise
 
 def recreate_driver(driver):
+    """Пересоздание драйвера при краше (улучшенное)"""
     print("   🔄 ПЕРЕСОЗДАНИЕ ДРАЙВЕРА...")
+    
+    # Закрываем старый драйвер
     try:
         driver.quit()
     except:
         pass
-    time.sleep(1)
+    
+    # Принудительно закрываем все процессы Chrome (для Windows)
+    try:
+        os.system("taskkill /f /im chrome.exe 2>nul")
+        os.system("taskkill /f /im chromedriver.exe 2>nul")
+    except:
+        pass
+    
+    time.sleep(2)
+    
+    # Создаем новый драйвер
     new_driver = get_driver()
     new_driver.get(APP_URL)
-    time.sleep(0.5)
+    time.sleep(1.5)
     print("   ✅ Драйвер пересоздан")
     return new_driver
 
@@ -225,17 +238,15 @@ def is_driver_crashed(exception):
     error = str(exception).lower()
     return "crashed" in error or "invalid session id" in error or "no such window" in error or "tab crashed" in error
 
-# --- БЫСТРЫЙ ПАРСИНГ (ОПТИМИЗИРОВАН) ---
+# --- БЫСТРЫЙ ПАРСИНГ ---
 def parse_rate_from_html(html):
     buy_rate = None
     sell_rate = None
     
-    # Оптимизированные регулярки
     buy_match = re.search(r'Покупка[^0-9]*([0-9]+)', html)
     if buy_match:
         buy_rate = int(buy_match.group(1))
     
-    # Ищем продажу (два варианта)
     sell_match = re.search(r'Продажа[^0-9]*=>?[^0-9]*([0-9]+)', html)
     if sell_match:
         sell_rate = int(sell_match.group(1))
@@ -259,38 +270,39 @@ def get_random_delay():
 def get_random_alive_interval():
     return random.randint(MIN_ALIVE_INTERVAL, MAX_ALIVE_INTERVAL)
 
-# --- ОСНОВНАЯ ФУНКЦИЯ (МАКСИМАЛЬНО БЫСТРАЯ) ---
+# --- БЫСТРОЕ ПОЛУЧЕНИЕ КУРСА ---
 def get_rate_fast(driver):
     """
     МАКСИМАЛЬНО БЫСТРОЕ ПОЛУЧЕНИЕ КУРСА
-    Все задержки сведены к минимуму
     """
     start_time = time.time()
     
     try:
-        # 1. Обновляем страницу (быстро)
+        # 1. Обновляем страницу
         driver.refresh()
+        time.sleep(0.1)
         
-        # 2. Нажимаем "Узнать курс" (с минимальным ожиданием)
+        # 2. Нажимаем "Узнать курс"
         try:
             learn_btn = WebDriverWait(driver, 1).until(
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Узнать курс')]"))
             )
             learn_btn.click()
+            time.sleep(0.05)
         except:
             pass
         
-        # 3. Нажимаем "Обновить курс" (с минимальным ожиданием)
+        # 3. Нажимаем "Обновить курс"
         try:
             update_btn = WebDriverWait(driver, 1).until(
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Обновить курс')]"))
             )
             update_btn.click()
+            time.sleep(0.1)
         except:
             pass
         
-        # 4. Получаем HTML (минимальная задержка)
-        time.sleep(0.1)  # Даем время на обновление
+        # 4. Получаем HTML
         html = driver.page_source
         
         # 5. Парсим
@@ -307,10 +319,43 @@ def get_rate_fast(driver):
             return None, None
         return None, None
 
+# --- ПОЛУЧЕНИЕ КУРСА С АВТОВОССТАНОВЛЕНИЕМ ---
+def get_rate_with_recovery(driver):
+    """
+    Получение курса с автоматическим восстановлением при краше
+    """
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            return get_rate_fast(driver)
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if "crashed" in error_msg or "invalid session" in error_msg or "no such window" in error_msg:
+                retry_count += 1
+                print(f"💥 КРАШ БРАУЗЕРА! Попытка {retry_count}/{max_retries}...")
+                
+                # Пересоздаем драйвер
+                driver = recreate_driver(driver)
+                
+                if retry_count >= max_retries:
+                    print("❌ Все попытки восстановления не удались")
+                    return None, None, driver
+                
+                time.sleep(1)
+            else:
+                # Другая ошибка
+                print(f"❌ Ошибка получения курса: {e}")
+                return None, None, driver
+    
+    return None, None, driver
+
 def main():
     global update_count, notification_count, last_alive_time, last_notification_time
 
-    print("🤖 Бот для отслеживания курса осколков (МАКСИМАЛЬНО БЫСТРЫЙ)")
+    print("🤖 Бот для отслеживания курса осколков (МАКСИМАЛЬНО БЫСТРЫЙ + АВТОВОССТАНОВЛЕНИЕ)")
     print("=" * 60)
     print(f"📱 Админ: {ADMIN_ID}")
     print(f"📱 Получатели: {USER_IDS}")
@@ -324,11 +369,9 @@ def main():
     print(f"   - Время одной проверки: ~1-2 секунды")
     print(f"   - Нажатие кнопок: каждые 3-6 секунд")
     print("=" * 60)
-    print("🚀 ОПТИМИЗАЦИЯ:")
-    print("   - Отключены картинки")
-    print("   - Минимальные таймауты")
-    print("   - Упрощенный парсинг")
-    print("   - Минимальные задержки")
+    print("🔄 АВТОВОССТАНОВЛЕНИЕ:")
+    print("   - При краше браузера автоматическое пересоздание")
+    print("   - До 3 попыток восстановления")
     print("=" * 60)
 
     state = load_state()
@@ -337,12 +380,13 @@ def main():
 
     if not first_start_done:
         start_message = (
-            f"🚀 БОТ ЗАПУЩЕН (МАКСИМАЛЬНО БЫСТРЫЙ РЕЖИМ)!\n"
+            f"🚀 БОТ ЗАПУЩЕН (МАКСИМАЛЬНО БЫСТРЫЙ РЕЖИМ + АВТОВОССТАНОВЛЕНИЕ)!\n"
             f"\n"
             f"📊 Отслеживание курса осколков\n"
             f"🟢 Покупка: ниже {BUY_THRESHOLD}\n"
             f"🔴 Продажа: выше {SELL_THRESHOLD}\n"
             f"⚡ Проверка каждые {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек\n"
+            f"🔄 Автовосстановление при краше\n"
             f"📢 Уведомления только при улучшении курса"
         )
         send_vk_message_to_admin(start_message)
@@ -362,99 +406,101 @@ def main():
         try:
             print(f"\n⏰ {datetime.now().strftime('%H:%M:%S')} - Проверка курса...")
             
-            # --- БЫСТРОЕ ПОЛУЧЕНИЕ КУРСА ---
-            buy_rate, sell_rate = get_rate_fast(driver)
+            # --- ПОЛУЧАЕМ КУРС С АВТОВОССТАНОВЛЕНИЕМ ---
+            buy_rate, sell_rate, driver = get_rate_with_recovery(driver)
+            
+            if buy_rate is None:
+                print("❌ Не удалось получить курс, пробуем снова...")
+                time.sleep(2)
+                continue
 
-            if buy_rate is not None:
-                update_count += 1
+            update_count += 1
+            
+            is_profitable = check_conditions(buy_rate, sell_rate)
+
+            print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate if sell_rate else 0}")
+
+            current_time = time.time()
+            
+            # --- "БОТ ЖИВ" ---
+            if current_time - last_alive_time >= next_alive_interval:
+                alive_count += 1
+                state = load_state()
+                state["alive_count"] = alive_count
+                save_state(state)
                 
-                is_profitable = check_conditions(buy_rate, sell_rate)
+                alive_message = (
+                    f"✅ Бот жив и работает!\n"
+                    f"\n"
+                    f"📊 Проверок: {update_count}\n"
+                    f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                    f"🔴 Продажа: 100 => {sell_rate if sell_rate else '???'} оск.\n"
+                    f"⚡ Интервал: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек\n"
+                    f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+                )
+                send_vk_message_to_admin(alive_message)
+                last_alive_time = current_time
+                next_alive_interval = get_random_alive_interval()
+                print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
+                print(f"⏳ Следующее через {next_alive_interval // 60} минут")
 
-                print(f"📊 #{update_count}: Покупка {buy_rate}, Продажа {sell_rate if sell_rate else 0}")
-
-                current_time = time.time()
-                
-                # --- "БОТ ЖИВ" ---
-                if current_time - last_alive_time >= next_alive_interval:
-                    alive_count += 1
-                    state = load_state()
-                    state["alive_count"] = alive_count
-                    save_state(state)
+            # --- УВЕДОМЛЕНИЯ ТОЛЬКО ПРИ УЛУЧШЕНИИ ---
+            if buy_rate and sell_rate:
+                if is_profitable:
+                    should_send, _, _, new_best_buy, new_best_sell = should_send_notification(buy_rate, sell_rate)
                     
-                    alive_message = (
-                        f"✅ Бот жив и работает!\n"
-                        f"\n"
-                        f"📊 Проверок: {update_count}\n"
-                        f"🟢 Покупка: {buy_rate} => 100 оск.\n"
-                        f"🔴 Продажа: 100 => {sell_rate if sell_rate else '???'} оск.\n"
-                        f"⚡ Интервал: {MIN_CHECK_INTERVAL}-{MAX_CHECK_INTERVAL} сек\n"
-                        f"⏰ {datetime.now().strftime('%H:%M:%S')}"
-                    )
-                    send_vk_message_to_admin(alive_message)
-                    last_alive_time = current_time
-                    next_alive_interval = get_random_alive_interval()
-                    print(f"💚 Отправлено 'Бот жив' админу (#{alive_count})")
-                    print(f"⏳ Следующее через {next_alive_interval // 60} минут")
+                    if should_send:
+                        notification_count += 1
+                        print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
 
-                # --- УВЕДОМЛЕНИЯ ТОЛЬКО ПРИ УЛУЧШЕНИИ ---
-                if buy_rate and sell_rate:
-                    if is_profitable:
-                        should_send, _, _, new_best_buy, new_best_sell = should_send_notification(buy_rate, sell_rate)
-                        
-                        if should_send:
-                            notification_count += 1
-                            print(f"🎯 УСЛОВИЯ ВЫПОЛНЕНЫ! (уведомление #{notification_count})")
-
-                            current_time = time.time()
-                            if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
-                                buy_condition = buy_rate < BUY_THRESHOLD
-                                sell_condition = sell_rate > SELL_THRESHOLD
-                                
-                                if buy_condition and sell_condition:
-                                    message = (
-                                        f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
-                                        f"\n"
-                                        f"🟢 Покупка: {buy_rate} => 100 оск.\n"
-                                        f"🔴 Продажа: 100 => {sell_rate} оск.\n"
-                                        f"\n"
-                                        f"🏆 Лучший курс за сессию:\n"
-                                        f"   Покупка: {new_best_buy if new_best_buy else buy_rate}\n"
-                                        f"   Продажа: {new_best_sell if new_best_sell else sell_rate}"
-                                    )
-                                elif buy_condition:
-                                    message = (
-                                        f"🟢 ВЫГОДНАЯ ПОКУПКА ОСКОЛКОВ!\n"
-                                        f"\n"
-                                        f"💎 {buy_rate} => 100 оск.\n"
-                                        f"📉 Курс упал до {buy_rate} (ниже {BUY_THRESHOLD})\n"
-                                        f"\n"
-                                        f"🏆 Лучший курс: {new_best_buy if new_best_buy else buy_rate}"
-                                    )
-                                else:
-                                    message = (
-                                        f"🔴 ВЫГОДНАЯ ПРОДАЖА ОСКОЛКОВ!\n"
-                                        f"\n"
-                                        f"🌕 100 => {sell_rate} оск.\n"
-                                        f"📈 Курс вырос до {sell_rate} (выше {SELL_THRESHOLD})\n"
-                                        f"\n"
-                                        f"🏆 Лучший курс: {new_best_sell if new_best_sell else sell_rate}"
-                                    )
-
-                                send_vk_message_to_all(message)
-                                last_notification_time = current_time
-                                save_last_notification(buy_rate, sell_rate, new_best_buy, new_best_sell)
-                                print(f"📊 Следующее уведомление через {NOTIFICATION_INTERVAL} сек")
+                        current_time = time.time()
+                        if current_time - last_notification_time >= NOTIFICATION_INTERVAL:
+                            buy_condition = buy_rate < BUY_THRESHOLD
+                            sell_condition = sell_rate > SELL_THRESHOLD
+                            
+                            if buy_condition and sell_condition:
+                                message = (
+                                    f"🚨 ВЫГОДНЫЙ КУРС ОСКОЛКОВ! 🚨\n"
+                                    f"\n"
+                                    f"🟢 Покупка: {buy_rate} => 100 оск.\n"
+                                    f"🔴 Продажа: 100 => {sell_rate} оск.\n"
+                                    f"\n"
+                                    f"🏆 Лучший курс за сессию:\n"
+                                    f"   Покупка: {new_best_buy if new_best_buy else buy_rate}\n"
+                                    f"   Продажа: {new_best_sell if new_best_sell else sell_rate}"
+                                )
+                            elif buy_condition:
+                                message = (
+                                    f"🟢 ВЫГОДНАЯ ПОКУПКА ОСКОЛКОВ!\n"
+                                    f"\n"
+                                    f"💎 {buy_rate} => 100 оск.\n"
+                                    f"📉 Курс упал до {buy_rate} (ниже {BUY_THRESHOLD})\n"
+                                    f"\n"
+                                    f"🏆 Лучший курс: {new_best_buy if new_best_buy else buy_rate}"
+                                )
                             else:
-                                wait_time = int(NOTIFICATION_INTERVAL - (current_time - last_notification_time))
-                                print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
+                                message = (
+                                    f"🔴 ВЫГОДНАЯ ПРОДАЖА ОСКОЛКОВ!\n"
+                                    f"\n"
+                                    f"🌕 100 => {sell_rate} оск.\n"
+                                    f"📈 Курс вырос до {sell_rate} (выше {SELL_THRESHOLD})\n"
+                                    f"\n"
+                                    f"🏆 Лучший курс: {new_best_sell if new_best_sell else sell_rate}"
+                                )
+
+                            send_vk_message_to_all(message)
+                            last_notification_time = current_time
+                            save_last_notification(buy_rate, sell_rate, new_best_buy, new_best_sell)
+                            print(f"📊 Следующее уведомление через {NOTIFICATION_INTERVAL} сек")
                         else:
-                            print(f"⏳ Курс не улучшился - сообщение НЕ отправлено")
+                            wait_time = int(NOTIFICATION_INTERVAL - (current_time - last_notification_time))
+                            print(f"⏳ Ожидаем {wait_time} сек перед следующим уведомлением")
                     else:
-                        print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
+                        print(f"⏳ Курс не улучшился - сообщение НЕ отправлено")
                 else:
-                    print("⚠️ Не все данные получены")
+                    print(f"⏳ Условия не выполнены — сообщение НЕ отправлено")
             else:
-                print("❌ Не удалось получить курс")
+                print("⚠️ Не все данные получены")
 
             delay = get_random_delay()
             print(f"⚡ Следующая проверка через {delay} секунд...")
