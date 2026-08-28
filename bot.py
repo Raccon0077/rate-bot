@@ -529,7 +529,7 @@ class VKBot:
                     )
                     return True
         
-        # ===== ИЗМЕНЕНИЕ ХАРАКТЕРИСТИК: ст+5 Имя или ст-5 Имя =====
+        # ===== ИЗМЕНЕНИЕ ХАРАКТЕРИСТИК =====
         stat_patterns = {
             r'^ст([+-]?\d+)$': 'stamina',
             r'^си([+-]?\d+)$': 'strength',
@@ -795,7 +795,7 @@ class VKBot:
                 self.send_message(peer_id, "❌ Укажите имя игрока. Формат: покажи профиль Имя", self.get_keyboard())
                 return
             
-            player_name = ' '.join(parts[2:])  # Берём всё после "покажи профиль"
+            player_name = ' '.join(parts[2:])
             target_id = self.find_user_by_name(player_name)
             
             if not target_id:
@@ -805,7 +805,7 @@ class VKBot:
             profile = self.get_profile(int(target_id))
             if profile:
                 profile_text = self.format_profile(int(target_id))
-                self.send_message(peer_id, f"📋 Профиль игрока {player_name}:\n\n{profile_text}", self.get_keyboard())
+                self.send_message(peer_id, f"📋 Профиль игрока '{player_name}':\n\n{profile_text}", self.get_keyboard())
             else:
                 self.send_message(peer_id, f"❌ У игрока '{player_name}' нет профиля.", self.get_keyboard())
             return
@@ -1073,6 +1073,7 @@ class VKBot:
         print("🔧 Команды админов в списке 'Команда'")
         print("🔄 + и - для изменения характеристик")
         print("📋 покажи профиль Имя - посмотреть профиль игрока")
+        print("💾 Профили сохраняются в profiles.json")
         print("=" * 50)
 
         for event in self.longpoll.listen():
