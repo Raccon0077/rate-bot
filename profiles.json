@@ -1,0 +1,163 @@
+{
+  "212887447": {
+    "name": "Деркитус",
+    "race": "Человек",
+    "class": "Танк",
+    "hp": 200,
+    "armor": 0,
+    "attack": 10,
+    "stats": {
+      "stamina": 20,
+      "strength": 20,
+      "agility": 5,
+      "charisma": 2,
+      "intellect": 3
+    },
+    "skills": {
+      "active": [
+        "Провокация"
+      ],
+      "passive": [
+        "Стойкость"
+      ]
+    }
+  },
+  "816395698": {
+    "name": "Велес",
+    "race": "Человек",
+    "class": "Воин",
+    "hp": 5330,
+    "armor": 0,
+    "attack": 10,
+    "stats": {
+      "stamina": 533,
+      "strength": 10,
+      "agility": 10,
+      "charisma": 11,
+      "intellect": 10
+    },
+    "skills": {
+      "active": [
+        "Рывок"
+      ],
+      "passive": [
+        "Уклонение"
+      ]
+    }
+  },
+  "202343829": {
+    "name": "Финд",
+    "race": "Демон",
+    "class": "Убийца",
+    "hp": 100,
+    "armor": 0,
+    "attack": 0,
+    "stats": {
+      "stamina": 10,
+      "strength": 10,
+      "agility": 15,
+      "charisma": 10,
+      "intellect": 5
+    },
+    "skills": {
+      "active": [
+        "Рывок"
+      ],
+      "passive": [
+        "Уклонение"
+      ]
+    }
+  },
+  "706455479": {
+    "name": "Малкор",
+    "race": "Разумная нежить",
+    "class": "Призыватель",
+    "hp": 50,
+    "armor": 0,
+    "attack": 0,
+    "stats": {
+      "stamina": 5,
+      "strength": 5,
+      "agility": 5,
+      "charisma": 15,
+      "intellect": 20
+    },
+    "skills": {
+      "active": [
+        "Призыв"
+      ],
+      "passive": [
+        "Подчинение"
+      ]
+    }
+  },
+  "536755029": {
+    "name": "Деркитус",
+    "race": "Человек",
+    "class": "Танк",
+    "hp": 200,
+    "armor": 0,
+    "attack": 0,
+    "stats": {
+      "stamina": 20,
+      "strength": 20,
+      "agility": 5,
+      "charisma": 2,
+      "intellect": 3
+    },
+    "skills": {
+      "active": [
+        "Провокация"
+      ],
+      "passive": [
+        "Стойкость"
+      ]
+    }
+  },
+  "281721241": {
+    "name": "Эксель",
+    "race": "Эльф",
+    "class": "Хилер",
+    "hp": 100,
+    "armor": 0,
+    "attack": 0,
+    "stats": {
+      "stamina": 10,
+      "strength": 5,
+      "agility": 10,
+      "charisma": 10,
+      "intellect": 15
+    },
+    "skills": {
+      "active": [
+        "Длань"
+      ],
+      "passive": [
+        "Восстановление"
+      ]
+    }
+  },
+  "675074277": {
+    "name": "Грэм",
+    "race": "Нежить",
+    "class": "Убийца",
+    "hp": 50,
+    "armor": 0,
+    "attack": 0,
+    "stats": {
+      "stamina": 5,
+      "strength": 10,
+      "agility": 15,
+      "charisma": 10,
+      "intellect": 10
+    },
+    "skills": {
+      "active": [
+        "Рывок"
+      ],
+      "passive": [
+        "Уклонение"
+      ]
+    }
+  }
+}
