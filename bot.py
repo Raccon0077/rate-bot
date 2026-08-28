@@ -33,9 +33,7 @@ class VKBot:
         self.profiles = self.load_profiles()
         self.last_forwarded = {}
         
-        # Добавляем профили
         self._init_profiles()
-        
         self.save_profiles()
         print(f"🔑 Бот запущен!")
         print(f"👑 Админы: Екатерина (ID: {EKATERINA_ID}), Велес (ID: {VELES_ID})")
@@ -43,7 +41,6 @@ class VKBot:
         print(f"⚖️ Все игроки бросают кости с одинаковыми шансами!")
 
     def _init_profiles(self):
-        """Инициализирует профили игроков"""
         profiles = {
             "202343829": {
                 "name": "Финд",
@@ -432,20 +429,20 @@ class VKBot:
         
         command = parts[0].lower()
         
-        # броня+5 Имя
+        # ===== ИЗМЕНЕНИЕ БРОНИ: броня+5 Имя или броня-5 Имя =====
         if command.startswith('броня'):
-            change_str = command.replace('броня', '').replace('+', '')
+            change_str = command.replace('броня', '')
             try:
                 change = int(change_str) if change_str else 0
             except:
                 change = 0
             
             if change == 0:
-                match = re.search(r'броня\+?(\d+)', command)
+                match = re.search(r'броня([+-]?\d+)', command)
                 if match:
                     change = int(match.group(1))
             
-            if change > 0:
+            if change != 0:
                 print(f"   Изменение: броня {change:+}")
                 
                 target_name = None
@@ -482,20 +479,20 @@ class VKBot:
                     )
                     return True
         
-        # атака+5 Имя
+        # ===== ИЗМЕНЕНИЕ АТАКИ: атака+5 Имя или атака-5 Имя =====
         if command.startswith('атака'):
-            change_str = command.replace('атака', '').replace('+', '')
+            change_str = command.replace('атака', '')
             try:
                 change = int(change_str) if change_str else 0
             except:
                 change = 0
             
             if change == 0:
-                match = re.search(r'атака\+?(\d+)', command)
+                match = re.search(r'атака([+-]?\d+)', command)
                 if match:
                     change = int(match.group(1))
             
-            if change > 0:
+            if change != 0:
                 print(f"   Изменение: атака {change:+}")
                 
                 target_name = None
@@ -532,21 +529,21 @@ class VKBot:
                     )
                     return True
         
-        # Характеристики
+        # ===== ИЗМЕНЕНИЕ ХАРАКТЕРИСТИК: ст+5 Имя или ст-5 Имя =====
         stat_patterns = {
-            r'^ст\+(\d+)$': 'stamina',
-            r'^си\+(\d+)$': 'strength',
-            r'^л\+(\d+)$': 'agility',
-            r'^х\+(\d+)$': 'charisma',
-            r'^и\+(\d+)$': 'intellect',
-            r'^хп\+(\d+)$': 'hp'
+            r'^ст([+-]?\d+)$': 'stamina',
+            r'^си([+-]?\d+)$': 'strength',
+            r'^л([+-]?\d+)$': 'agility',
+            r'^х([+-]?\d+)$': 'charisma',
+            r'^и([+-]?\d+)$': 'intellect',
+            r'^хп([+-]?\d+)$': 'hp'
         }
         
         for pattern, stat_name in stat_patterns.items():
             match = re.match(pattern, command)
             if match:
                 change = int(match.group(1))
-                if change <= 0:
+                if change == 0:
                     return False
                 
                 print(f"   Изменение: {stat_name} {change:+}")
@@ -787,7 +784,33 @@ class VKBot:
                 }
                 print(f"📎 Сохранено пересланное сообщение от {user_id} для игрока {forwarded_user_id}")
 
-        # /игроки
+        # ===== ПОКАЗАТЬ ПРОФИЛЬ ИГРОКА (только для админов) =====
+        if text.startswith('покажи профиль'):
+            if not is_admin:
+                self.send_message(peer_id, "❌ Эта команда доступна только администраторам.", self.get_keyboard())
+                return
+            
+            parts = text.split()
+            if len(parts) < 3:
+                self.send_message(peer_id, "❌ Укажите имя игрока. Формат: покажи профиль Имя", self.get_keyboard())
+                return
+            
+            player_name = ' '.join(parts[2:])  # Берём всё после "покажи профиль"
+            target_id = self.find_user_by_name(player_name)
+            
+            if not target_id:
+                self.send_message(peer_id, f"❌ Игрок с именем '{player_name}' не найден.", self.get_keyboard())
+                return
+            
+            profile = self.get_profile(int(target_id))
+            if profile:
+                profile_text = self.format_profile(int(target_id))
+                self.send_message(peer_id, f"📋 Профиль игрока {player_name}:\n\n{profile_text}", self.get_keyboard())
+            else:
+                self.send_message(peer_id, f"❌ У игрока '{player_name}' нет профиля.", self.get_keyboard())
+            return
+
+        # ===== /игроки =====
         if clean_text == '/игроки':
             if not is_admin:
                 self.send_message(peer_id, "❌ Эта команда доступна только администраторам.", self.get_keyboard())
@@ -803,28 +826,30 @@ class VKBot:
                 self.send_message(peer_id, "❌ Нет сохранённых профилей игроков.", self.get_keyboard())
             return
 
-        # Команда
+        # ===== КОМАНДА =====
         if clean_text == 'команда':
             if not is_admin:
                 print(f"⛔ {user_id} пытался вызвать команду, но только админы могут это делать!")
                 return
             help_msg = (
                 "🎲 **Список команд для админов:**\n\n"
+                "**Просмотр профилей:**\n"
+                "• покажи профиль Имя - показать профиль игрока\n"
+                "• /игроки - список всех игроков\n"
+                "• /проф (с пересылкой) - показать профиль игрока по пересылке\n\n"
                 "**Управление профилями:**\n"
                 "• +проф (с пересылкой) - обновить свой профиль\n"
                 "• игрок+ (с пересылкой) - создать/обновить профиль игрока\n"
-                "• игрок- Имя - удалить профиль игрока\n"
-                "• /проф (с пересылкой) - показать профиль игрока\n"
-                "• /игроки - показать список всех игроков\n\n"
-                "**Изменение характеристик:**\n"
-                "• ст+5 Имя - Стойкость +5\n"
-                "• си+3 Имя - Сила +3\n"
-                "• л+2 Имя - Ловкость +2\n"
-                "• х+4 Имя - Харизма +4\n"
-                "• и+1 Имя - Интеллект +1\n"
-                "• хп+50 Имя - ХП +50\n"
-                "• броня+5 Имя - Броня +5\n"
-                "• атака+5 Имя - Атака +5\n\n"
+                "• игрок- Имя - удалить профиль игрока\n\n"
+                "**Изменение характеристик (+ и -):**\n"
+                "• ст+5 Имя / ст-5 Имя - Стойкость\n"
+                "• си+3 Имя / си-3 Имя - Сила\n"
+                "• л+2 Имя / л-2 Имя - Ловкость\n"
+                "• х+4 Имя / х-4 Имя - Харизма\n"
+                "• и+1 Имя / и-1 Имя - Интеллект\n"
+                "• хп+50 Имя / хп-50 Имя - ХП\n"
+                "• броня+5 Имя / броня-5 Имя - Броня\n"
+                "• атака+5 Имя / атака-5 Имя - Атака\n\n"
                 "**Навыки:**\n"
                 "• активка Навык+ - добавить активный навык\n"
                 "• пассивка Навык+ - добавить пассивный навык\n\n"
@@ -1046,6 +1071,8 @@ class VKBot:
         print("📊 Модификаторы округляются в большую сторону (потолок)")
         print("👤 Для всех: кнопка 'Мой профиль'")
         print("🔧 Команды админов в списке 'Команда'")
+        print("🔄 + и - для изменения характеристик")
+        print("📋 покажи профиль Имя - посмотреть профиль игрока")
         print("=" * 50)
 
         for event in self.longpoll.listen():
