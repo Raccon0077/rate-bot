@@ -33,126 +33,74 @@ class VKBot:
         self.profiles = self.load_profiles()
         self.last_forwarded = {}
         
-        # Добавляем профиль Финда (ID: 202343829)
-        if "202343829" not in self.profiles:
-            self.profiles["202343829"] = {
-                "name": "Финд",
-                "race": "Демон",
-                "class": "Убийца",
-                "hp": 100,
-                "armor": 0,
-                "attack": 0,
-                "stats": {
-                    "stamina": 10,
-                    "strength": 10,
-                    "agility": 15,
-                    "charisma": 10,
-                    "intellect": 5
-                },
-                "skills": {
-                    "active": ["Рывок"],
-                    "passive": ["Уклонение"]
-                }
-            }
-            print(f"✅ Добавлен профиль: Финд (ID: 202343829)")
-        
-        # Добавляем профиль Малкора (ID: 706455479)
-        if "706455479" not in self.profiles:
-            self.profiles["706455479"] = {
-                "name": "Малкор",
-                "race": "Разумная нежить",
-                "class": "Призыватель",
-                "hp": 50,
-                "armor": 0,
-                "attack": 0,
-                "stats": {
-                    "stamina": 5,
-                    "strength": 5,
-                    "agility": 5,
-                    "charisma": 15,
-                    "intellect": 20
-                },
-                "skills": {
-                    "active": ["Призыв"],
-                    "passive": ["Подчинение"]
-                }
-            }
-            print(f"✅ Добавлен профиль: Малкор (ID: 706455479)")
-        
-        # Добавляем профиль Деркитуса (ID: 536755029)
-        if "536755029" not in self.profiles:
-            self.profiles["536755029"] = {
-                "name": "Деркитус",
-                "race": "Человек",
-                "class": "Танк",
-                "hp": 200,
-                "armor": 0,
-                "attack": 0,
-                "stats": {
-                    "stamina": 20,
-                    "strength": 20,
-                    "agility": 5,
-                    "charisma": 2,
-                    "intellect": 3
-                },
-                "skills": {
-                    "active": ["Провокация"],
-                    "passive": ["Стойкость"]
-                }
-            }
-            print(f"✅ Добавлен профиль: Деркитус (ID: 536755029)")
-        
-        # Добавляем профиль Эксель (ID: 281721241)
-        if "281721241" not in self.profiles:
-            self.profiles["281721241"] = {
-                "name": "Эксель",
-                "race": "Эльф",
-                "class": "Хилер",
-                "hp": 100,
-                "armor": 0,
-                "attack": 0,
-                "stats": {
-                    "stamina": 10,
-                    "strength": 5,
-                    "agility": 10,
-                    "charisma": 10,
-                    "intellect": 15
-                },
-                "skills": {
-                    "active": ["Длань"],
-                    "passive": ["Восстановление"]
-                }
-            }
-            print(f"✅ Добавлен профиль: Эксель (ID: 281721241)")
-        
-        # Добавляем профиль Грэма (ID: 675074277)
-        if "675074277" not in self.profiles:
-            self.profiles["675074277"] = {
-                "name": "Грэм",
-                "race": "Нежить",
-                "class": "Убийца",
-                "hp": 50,
-                "armor": 0,
-                "attack": 0,
-                "stats": {
-                    "stamina": 5,
-                    "strength": 10,
-                    "agility": 15,
-                    "charisma": 10,
-                    "intellect": 10
-                },
-                "skills": {
-                    "active": ["Рывок"],
-                    "passive": ["Уклонение"]
-                }
-            }
-            print(f"✅ Добавлен профиль: Грэм (ID: 675074277)")
+        # Добавляем профили
+        self._init_profiles()
         
         self.save_profiles()
         print(f"🔑 Бот запущен!")
         print(f"👑 Админы: Екатерина (ID: {EKATERINA_ID}), Велес (ID: {VELES_ID})")
         print(f"📋 Загружено профилей: {len(self.profiles)}")
         print(f"⚖️ Все игроки бросают кости с одинаковыми шансами!")
+
+    def _init_profiles(self):
+        """Инициализирует профили игроков"""
+        profiles = {
+            "202343829": {
+                "name": "Финд",
+                "race": "Демон",
+                "class": "Убийца",
+                "hp": 100,
+                "armor": 0,
+                "attack": 0,
+                "stats": {"stamina": 10, "strength": 10, "agility": 15, "charisma": 10, "intellect": 5},
+                "skills": {"active": ["Рывок"], "passive": ["Уклонение"]}
+            },
+            "706455479": {
+                "name": "Малкор",
+                "race": "Разумная нежить",
+                "class": "Призыватель",
+                "hp": 50,
+                "armor": 0,
+                "attack": 0,
+                "stats": {"stamina": 5, "strength": 5, "agility": 5, "charisma": 15, "intellect": 20},
+                "skills": {"active": ["Призыв"], "passive": ["Подчинение"]}
+            },
+            "536755029": {
+                "name": "Деркитус",
+                "race": "Человек",
+                "class": "Танк",
+                "hp": 200,
+                "armor": 0,
+                "attack": 0,
+                "stats": {"stamina": 20, "strength": 20, "agility": 5, "charisma": 2, "intellect": 3},
+                "skills": {"active": ["Провокация"], "passive": ["Стойкость"]}
+            },
+            "281721241": {
+                "name": "Эксель",
+                "race": "Эльф",
+                "class": "Хилер",
+                "hp": 100,
+                "armor": 0,
+                "attack": 0,
+                "stats": {"stamina": 10, "strength": 5, "agility": 10, "charisma": 10, "intellect": 15},
+                "skills": {"active": ["Длань"], "passive": ["Восстановление"]}
+            },
+            "675074277": {
+                "name": "Грэм",
+                "race": "Нежить",
+                "class": "Убийца",
+                "hp": 50,
+                "armor": 0,
+                "attack": 0,
+                "stats": {"stamina": 5, "strength": 10, "agility": 15, "charisma": 10, "intellect": 10},
+                "skills": {"active": ["Рывок"], "passive": ["Уклонение"]}
+            }
+        }
+        
+        for user_id, profile in profiles.items():
+            if user_id not in self.profiles:
+                self.profiles[user_id] = profile
+                print(f"✅ Добавлен профиль: {profile['name']} (ID: {user_id})")
 
     def load_profiles(self):
         if os.path.exists(PROFILES_FILE):
@@ -281,7 +229,6 @@ class VKBot:
         return msg
 
     def get_all_players(self):
-        """Возвращает список всех игроков (только имена)"""
         players = []
         for user_id, profile in self.profiles.items():
             if int(user_id) not in ADMIN_IDS:
@@ -430,8 +377,6 @@ class VKBot:
         return False
 
     def roll_dice(self, sides, user_id):
-        """Бросает кость с повышенным шансом маленьких цифр для всех игроков"""
-        # Для всех игроков одинаковые шансы
         weights = [sides - i + 1 for i in range(sides)]
         return random.choices(range(1, sides + 1), weights=weights, k=1)[0]
 
@@ -487,7 +432,7 @@ class VKBot:
         
         command = parts[0].lower()
         
-        # ===== ИЗМЕНЕНИЕ БРОНИ: броня+5 Имя =====
+        # броня+5 Имя
         if command.startswith('броня'):
             change_str = command.replace('броня', '').replace('+', '')
             try:
@@ -537,7 +482,7 @@ class VKBot:
                     )
                     return True
         
-        # ===== ИЗМЕНЕНИЕ АТАКИ: атака+5 Имя =====
+        # атака+5 Имя
         if command.startswith('атака'):
             change_str = command.replace('атака', '').replace('+', '')
             try:
@@ -587,7 +532,7 @@ class VKBot:
                     )
                     return True
         
-        # ===== ИЗМЕНЕНИЕ ХАРАКТЕРИСТИК =====
+        # Характеристики
         stat_patterns = {
             r'^ст\+(\d+)$': 'stamina',
             r'^си\+(\d+)$': 'strength',
@@ -842,7 +787,7 @@ class VKBot:
                 }
                 print(f"📎 Сохранено пересланное сообщение от {user_id} для игрока {forwarded_user_id}")
 
-        # ===== КОМАНДА /ИГРОКИ =====
+        # /игроки
         if clean_text == '/игроки':
             if not is_admin:
                 self.send_message(peer_id, "❌ Эта команда доступна только администраторам.", self.get_keyboard())
@@ -858,7 +803,7 @@ class VKBot:
                 self.send_message(peer_id, "❌ Нет сохранённых профилей игроков.", self.get_keyboard())
             return
 
-        # Команда Команда - только для админов
+        # Команда
         if clean_text == 'команда':
             if not is_admin:
                 print(f"⛔ {user_id} пытался вызвать команду, но только админы могут это делать!")
@@ -891,7 +836,7 @@ class VKBot:
             self.send_message(peer_id, help_msg, self.get_keyboard())
             return
 
-        # Активация (только для админов)
+        # Активация/деактивация
         if clean_text in ['кости+', 'кости +']:
             if not is_admin:
                 return
@@ -900,7 +845,6 @@ class VKBot:
                 self.send_message(peer_id, "🎲 Бот активирован!", self.get_keyboard())
             return
 
-        # Деактивация (только для админов)
         if clean_text in ['кости-', 'кости -']:
             if not is_admin:
                 return
@@ -909,7 +853,7 @@ class VKBot:
                 self.send_message(peer_id, "🎲 Бот деактивирован!", self.get_clear_keyboard())
             return
 
-        # ===== КОМАНДА /ПРОФ =====
+        # /проф
         if text.startswith('/проф'):
             if not is_admin:
                 self.send_message(peer_id, "❌ Эта команда доступна только администраторам.", self.get_keyboard())
@@ -926,7 +870,7 @@ class VKBot:
                 self.send_message(peer_id, "❌ Перешлите сообщение игрока, чей профиль хотите посмотреть.", self.get_keyboard())
             return
 
-        # ===== КОМАНДА ИГРОК+ =====
+        # игрок+
         if text.lower().startswith('игрок+') and is_admin:
             if is_forward and forwarded_text and forwarded_user_id:
                 print(f"📎 Создание профиля игрока из пересланного сообщения")
@@ -958,7 +902,7 @@ class VKBot:
                 self.send_message(peer_id, "❌ Перешлите сообщение игрока с профилем вместе с командой 'игрок+'.", self.get_keyboard())
                 return
 
-        # ===== КОМАНДА ИГРОК- =====
+        # игрок-
         if text.lower().startswith('игрок-') and is_admin:
             parts = text.split()
             if len(parts) < 2:
@@ -978,7 +922,7 @@ class VKBot:
                 self.send_message(peer_id, f"❌ Профиль игрока '{player_name}' не найден.", self.get_keyboard())
             return
 
-        # ===== +ПРОФ / +ПРОФИЛЬ - ОБНОВЛЕНИЕ СВОЕГО ПРОФИЛЯ =====
+        # +проф / +профиль
         if text.startswith('+проф') or text.startswith('+профиль'):
             print(f"🔍 Обработка команды: {text[:50]}...")
             
@@ -1042,7 +986,7 @@ class VKBot:
             self.send_message(peer_id, "❌ Перешлите сообщение с профилем вместе с командой +проф (одним сообщением).", self.get_keyboard())
             return
 
-        # ===== МОЙ ПРОФИЛЬ - ТОЛЬКО ДЛЯ ПРОСМОТРА =====
+        # Мой профиль
         if clean_text in ['мой профиль', 'профиль']:
             profile = self.get_profile(user_id)
             if profile:
@@ -1064,7 +1008,7 @@ class VKBot:
         if is_admin and self.handle_admin_command(text, peer_id, user_id):
             return
 
-        # ===== КОСТИ (ДЛЯ ВСЕХ) =====
+        # Кости
         if clean_text in ['d6', 'д6']:
             result = self.roll_dice(6, user_id)
             name = self.get_user_name(user_id)
