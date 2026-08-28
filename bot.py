@@ -18,8 +18,13 @@ EKATERINA_ID = 212887447
 VELES_ID = 816395698
 ADMIN_IDS = [EKATERINA_ID, VELES_ID]
 
-# Файл для хранения профилей
-PROFILES_FILE = "profiles.json"
+# ===== ДЛЯ BOTHOST: ПРАВИЛЬНЫЙ ПУТЬ =====
+# Получаем путь к папке, где находится bot.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROFILES_FILE = os.path.join(BASE_DIR, "profiles.json")
+
+print(f"📁 Папка с ботом: {BASE_DIR}")
+print(f"📄 Файл профилей: {PROFILES_FILE}")
 
 
 class VKBot:
@@ -33,12 +38,18 @@ class VKBot:
         self.profiles = self.load_profiles()
         self.last_forwarded = {}
         
+        # Проверяем, есть ли файл
+        if os.path.exists(PROFILES_FILE):
+            print(f"✅ Файл профилей найден: {PROFILES_FILE}")
+        else:
+            print(f"⚠️ Файл профилей не найден, будет создан при первом сохранении")
+        
         self._init_profiles()
         self.save_profiles()
         print(f"🔑 Бот запущен!")
         print(f"👑 Админы: Екатерина (ID: {EKATERINA_ID}), Велес (ID: {VELES_ID})")
         print(f"📋 Загружено профилей: {len(self.profiles)}")
-        print(f"⚖️ Все игроки бросают кости с одинаковыми шансами!")
+        print(f"💾 Профили сохраняются в: {PROFILES_FILE}")
 
     def _init_profiles(self):
         profiles = {
@@ -103,14 +114,23 @@ class VKBot:
         if os.path.exists(PROFILES_FILE):
             try:
                 with open(PROFILES_FILE, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
+                    data = json.load(f)
+                    print(f"📂 Загружено {len(data)} профилей из файла")
+                    return data
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки профилей: {e}")
                 return {}
         return {}
 
     def save_profiles(self):
-        with open(PROFILES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(self.profiles, f, ensure_ascii=False, indent=2)
+        try:
+            with open(PROFILES_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.profiles, f, ensure_ascii=False, indent=2)
+            print(f"💾 Сохранено {len(self.profiles)} профилей в файл")
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка сохранения профилей: {e}")
+            return False
 
     def get_keyboard(self):
         keyboard = VkKeyboard(one_time=False, inline=False)
@@ -784,7 +804,7 @@ class VKBot:
                 }
                 print(f"📎 Сохранено пересланное сообщение от {user_id} для игрока {forwarded_user_id}")
 
-        # ===== ПОКАЗАТЬ ПРОФИЛЬ ИГРОКА (только для админов) =====
+        # ===== ПОКАЗАТЬ ПРОФИЛЬ ИГРОКА =====
         if text.startswith('покажи профиль'):
             if not is_admin:
                 self.send_message(peer_id, "❌ Эта команда доступна только администраторам.", self.get_keyboard())
@@ -1065,6 +1085,8 @@ class VKBot:
     def run(self):
         print("=" * 50)
         print("🎲 Бот запущен!")
+        print(f"📁 Папка с ботом: {BASE_DIR}")
+        print(f"💾 Файл профилей: {PROFILES_FILE}")
         print("👑 Админы: Екатерина, Велес")
         print("⚖️ Все игроки бросают кости с одинаковыми шансами!")
         print("💚 1 Стойкость = 10 HP")
@@ -1073,7 +1095,7 @@ class VKBot:
         print("🔧 Команды админов в списке 'Команда'")
         print("🔄 + и - для изменения характеристик")
         print("📋 покажи профиль Имя - посмотреть профиль игрока")
-        print("💾 Профили сохраняются в profiles.json")
+        print("💾 Профили автоматически сохраняются при каждом изменении")
         print("=" * 50)
 
         for event in self.longpoll.listen():
