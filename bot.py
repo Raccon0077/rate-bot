@@ -21,6 +21,73 @@ ADMIN_IDS = [EKATERINA_ID, VELES_ID]
 # Файл для хранения профилей
 PROFILES_FILE = "profiles.json"
 
+# ===== НОВЫЕ СТИХИИ ДЛЯ РАС =====
+ELEMENTS = {
+    "человек": "☀️ Свет",
+    "эльф": "💨 Ветер",
+    "великан": "🌍 Земля",
+    "гном": "🪨 Камень",
+    "демон": "🌪️ Хаос",
+    "нежить": "💀 Смерть",
+    "фея": "🌊 Вода",
+    "драконорожденный": "⚡ Молния",
+    "ангел": "☀️ Свет",
+    "орк": "🔥 Огонь",
+    "тёмный эльф": "🌑 Тьма",
+    "зверолюд": "🌍 Земля",
+    "вампир": "🌑 Тьма",
+    "оборотень": "🌍 Земля",
+    "некромант": "💀 Смерть",
+    "элементаль огня": "🔥 Огонь",
+    "элементаль воды": "🌊 Вода",
+    "элементаль земли": "🌍 Земля",
+    "элементаль воздуха": "💨 Ветер",
+    "хаотит": "🌪️ Хаос",
+    "кошмар": "🌑 Тьма",
+    "инфернальный": "🔥 Огонь",
+    "джинн": "💨 Ветер",
+    "сильф": "💨 Ветер",
+    "ундина": "🌊 Вода",
+    "саламандра": "🔥 Огонь",
+    "голем": "🪨 Камень",
+    "тролль": "🪨 Камень",
+    "гоблин": "🌑 Тьма",
+    "хоббит": "🌍 Земля",
+    "кентавр": "🌍 Земля",
+    "минотавр": "🔥 Огонь",
+    "гарпия": "💨 Ветер",
+    "химера": "🌪️ Хаос",
+    "лич": "💀 Смерть",
+    "дух": "💨 Ветер",
+    "ангел падший": "🌑 Тьма",
+    "архангел": "☀️ Свет",
+    "валькирия": "⚡ Молния",
+    "дракон": "🔥 Огонь",
+    "грифон": "⚡ Молния",
+    "пегас": "☀️ Свет",
+    "единорог": "☀️ Свет",
+    "феникс": "🔥 Огонь",
+    "баньши": "💀 Смерть",
+    "призрак": "💀 Смерть",
+    "инкуб": "🌑 Тьма",
+    "суккуб": "🌑 Тьма",
+    "гном горный": "🪨 Камень",
+    "гном лесной": "🌍 Земля",
+    "гном подгорный": "🪨 Камень",
+    "гном кузнец": "🔥 Огонь",
+    "гном рудокоп": "🪨 Камень",
+    "гном воин": "🪨 Камень",
+    "гном маг": "🌍 Земля",
+    "гном инженер": "🔥 Огонь",
+    "гном алхимик": "🔥 Огонь",
+    "гном камнерез": "🪨 Камень",
+    "гном ювелир": "🌍 Земля",
+    "гном страж": "🪨 Камень",
+    "гном изгнанник": "🌑 Тьма",
+    "гном проклятый": "💀 Смерть",
+    "гном древний": "🌍 Земля",
+}
+
 
 class VKBot:
     def __init__(self, token, group_id):
@@ -38,8 +105,14 @@ class VKBot:
         print(f"🔑 Бот запущен!")
         print(f"👑 Админы: Екатерина (ID: {EKATERINA_ID}), Велес (ID: {VELES_ID})")
         print(f"📋 Загружено профилей: {len(self.profiles)}")
-        print(f"⚔️ Добавлена система оружия: оружие+ Название d6 Имя")
-        print(f"🗑️ Команда: -профиль Имя - удалить профиль игрока")
+        print(f"🌍 Добавлены новые расы и стихии!")
+
+    def get_element(self, race):
+        """Возвращает стихию для расы"""
+        if not race:
+            return "❓ Неизвестно"
+        race_lower = race.lower().strip()
+        return ELEMENTS.get(race_lower, "❓ Неизвестно")
 
     def _init_profiles(self):
         profiles = {
@@ -56,7 +129,7 @@ class VKBot:
             },
             "706455479": {
                 "name": "Малкор",
-                "race": "Разумная нежить",
+                "race": "Нежить",
                 "class": "Призыватель",
                 "hp": 50,
                 "armor": 0,
@@ -228,9 +301,10 @@ class VKBot:
         passive_skills = [self.clean_skill_name(s) for s in profile['skills']['passive']]
         
         weapon = profile.get('weapon', {"name": "Кулаки", "damage": "d4"})
+        element = self.get_element(profile['race'])
         
         msg = f"📋 Имя: {profile['name']}\n"
-        msg += f"👤 Раса: {profile['race']}\n"
+        msg += f"👤 Раса: {profile['race']} ({element})\n"
         msg += f"⚙ Класс: {profile['class']}\n"
         msg += f"💚 ХП: {profile['hp']}   🛡 Броня: {profile['armor']}   🗡 Атака: {profile['attack']}\n"
         msg += f"⚔️ Оружие: {weapon['name']} ({weapon['damage']})\n"
@@ -774,14 +848,16 @@ class VKBot:
                     old_race = profile['race']
                     profile['race'] = race_name
                     self.save_profiles()
-                    self.send_message(peer_id, f"✅ {profile['name']}: раса изменена с '{old_race}' на '{race_name}'", self.get_keyboard())
+                    element = self.get_element(race_name)
+                    self.send_message(peer_id, f"✅ {profile['name']}: раса изменена с '{old_race}' на '{race_name}' ({element})", self.get_keyboard())
                     return True
             else:
                 profile = self.get_or_create_profile(user_id)
                 old_race = profile['race']
                 profile['race'] = race_name
                 self.save_profiles()
-                self.send_message(peer_id, f"✅ Раса изменена с '{old_race}' на '{race_name}'", self.get_keyboard())
+                element = self.get_element(race_name)
+                self.send_message(peer_id, f"✅ Раса изменена с '{old_race}' на '{race_name}' ({element})", self.get_keyboard())
                 return True
             return False
         
@@ -828,6 +904,27 @@ class VKBot:
         is_chat = peer_id > 2000000000
         clean_text = self.clean_text(text)
         is_admin = user_id in ADMIN_IDS
+
+        is_forward = False
+        forwarded_text = ""
+        forwarded_user_id = None
+        
+        if 'fwd' in message_data and message_data['fwd']:
+            is_forward = True
+            for fwd in message_data['fwd']:
+                if 'text' in fwd and fwd['text']:
+                    forwarded_text = fwd['text']
+                if 'from_id' in fwd:
+                    forwarded_user_id = fwd['from_id']
+                break
+            
+            if is_admin and forwarded_text and forwarded_user_id:
+                self.last_forwarded[user_id] = {
+                    'text': forwarded_text,
+                    'user_id': forwarded_user_id,
+                    'peer_id': peer_id
+                }
+                print(f"📎 Сохранено пересланное сообщение от {user_id} для игрока {forwarded_user_id}")
 
         # ===== КОМАНДА -ПРОФИЛЬ (для админов) =====
         if text.startswith('-профиль'):
@@ -927,7 +1024,7 @@ class VKBot:
                 "• активка Навык+ - добавить активный навык\n"
                 "• пассивка Навык+ - добавить пассивный навык\n\n"
                 "**Прочее:**\n"
-                "• раса Эльф Имя - изменить расу\n"
+                "• раса Эльф Имя - изменить расу (автоматически добавится стихия)\n"
                 "• класс Хилер Имя - изменить класс\n"
                 "• кости+ / кости- - активировать/деактивировать бота"
             )
@@ -1004,7 +1101,6 @@ class VKBot:
         if text.startswith('+проф') or text.startswith('+профиль'):
             print(f"🔍 Обработка команды: {text[:50]}...")
             
-            # Убираем команду из текста
             if text.startswith('+проф'):
                 text_after = text[5:].strip()
             else:
@@ -1098,6 +1194,7 @@ class VKBot:
         print("💚 1 Стойкость = 10 HP")
         print("📊 Модификаторы округляются в большую сторону (потолок)")
         print("👤 Для всех: кнопка 'Мой профиль'")
+        print("🌍 Добавлены стихии для рас!")
         print("🔧 Команды админов в списке 'Команда'")
         print("🔄 + и - для изменения характеристик")
         print("📋 +проф - обновить профиль из текста")
