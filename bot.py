@@ -30,21 +30,16 @@ class VKBot:
         self.vk = self.vk_session.get_api()
         self.longpoll = VkBotLongPoll(self.vk_session, group_id)
         self.active_chats = {2000000006, 2000000004}
-        
-        # Загружаем профили
-        self.profiles = {}
-        self.load_profiles()
-        
+        self.profiles = self.load_profiles()
         self.last_forwarded = {}
         
-        # Добавляем дефолтные профили, если их нет
         self._init_profiles()
         self.save_profiles()
-        
         print(f"🔑 Бот запущен!")
         print(f"👑 Админы: Екатерина (ID: {EKATERINA_ID}), Велес (ID: {VELES_ID})")
         print(f"📋 Загружено профилей: {len(self.profiles)}")
-        print(f"📩 Резервные копии отправляются в ЛС Екатерине")
+        print(f"⚔️ Добавлена система оружия: оружие+ Название d6 Имя")
+        print(f"🗑️ Команда: -профиль Имя - удалить профиль игрока")
 
     def _init_profiles(self):
         profiles = {
@@ -55,6 +50,7 @@ class VKBot:
                 "hp": 100,
                 "armor": 0,
                 "attack": 0,
+                "weapon": {"name": "Кинжал", "damage": "d4"},
                 "stats": {"stamina": 10, "strength": 10, "agility": 15, "charisma": 10, "intellect": 5},
                 "skills": {"active": ["Рывок"], "passive": ["Уклонение"]}
             },
@@ -65,6 +61,7 @@ class VKBot:
                 "hp": 50,
                 "armor": 0,
                 "attack": 0,
+                "weapon": {"name": "Посох", "damage": "d4"},
                 "stats": {"stamina": 5, "strength": 5, "agility": 5, "charisma": 15, "intellect": 20},
                 "skills": {"active": ["Призыв"], "passive": ["Подчинение"]}
             },
@@ -75,6 +72,7 @@ class VKBot:
                 "hp": 200,
                 "armor": 0,
                 "attack": 0,
+                "weapon": {"name": "Щит", "damage": "d4"},
                 "stats": {"stamina": 20, "strength": 20, "agility": 5, "charisma": 2, "intellect": 3},
                 "skills": {"active": ["Провокация"], "passive": ["Стойкость"]}
             },
@@ -85,6 +83,7 @@ class VKBot:
                 "hp": 100,
                 "armor": 0,
                 "attack": 0,
+                "weapon": {"name": "Жезл", "damage": "d4"},
                 "stats": {"stamina": 10, "strength": 5, "agility": 10, "charisma": 10, "intellect": 15},
                 "skills": {"active": ["Длань"], "passive": ["Восстановление"]}
             },
@@ -95,6 +94,7 @@ class VKBot:
                 "hp": 50,
                 "armor": 0,
                 "attack": 0,
+                "weapon": {"name": "Кинжал", "damage": "d4"},
                 "stats": {"stamina": 5, "strength": 10, "agility": 15, "charisma": 10, "intellect": 10},
                 "skills": {"active": ["Рывок"], "passive": ["Уклонение"]}
             }
@@ -106,102 +106,25 @@ class VKBot:
                 print(f"✅ Добавлен профиль: {profile['name']} (ID: {user_id})")
 
     def load_profiles(self):
-        """Загружает профили из файла"""
         if os.path.exists(PROFILES_FILE):
             try:
                 with open(PROFILES_FILE, 'r', encoding='utf-8') as f:
-                    self.profiles = json.load(f)
-                    print(f"📂 Загружено {len(self.profiles)} профилей из файла")
-                    return
-            except Exception as e:
-                print(f"⚠️ Ошибка загрузки профилей: {e}")
-        
-        self.profiles = {}
-        print("⚠️ Файл профилей не найден, создаю новый")
+                    data = json.load(f)
+                    print(f"📂 Загружено {len(data)} профилей из файла")
+                    return data
+            except:
+                return {}
+        return {}
 
     def save_profiles(self):
-        """Сохраняет все профили в файл и отправляет резервную копию Екатерине"""
         try:
-            # Сохраняем в файл
             with open(PROFILES_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.profiles, f, ensure_ascii=False, indent=2)
-            print(f"💾 Сохранено {len(self.profiles)} профилей в файл")
-            
-            # Отправляем резервную копию Екатерине
-            self.send_backup_to_ekaterina()
+            print(f"💾 Сохранено {len(self.profiles)} профилей")
             return True
         except Exception as e:
-            print(f"❌ Ошибка сохранения профилей: {e}")
+            print(f"❌ Ошибка сохранения: {e}")
             return False
-
-    def send_backup_to_ekaterina(self):
-        """Отправляет полную резервную копию всех профилей Екатерине в ЛС"""
-        try:
-            if not self.profiles:
-                print("⚠️ Нет профилей для резервного копирования")
-                return
-            
-            # Формируем сообщение со всеми профилями
-            backup_msg = "📦 **Резервная копия всех профилей**\n\n"
-            backup_msg += f"📋 Всего профилей: {len(self.profiles)}\n"
-            backup_msg += f"🕐 Обновлено: {self.get_current_time()}\n\n"
-            backup_msg += "```json\n"
-            backup_msg += json.dumps(self.profiles, ensure_ascii=False, indent=2)
-            backup_msg += "\n```"
-            
-            # Отправляем Екатерине в ЛС
-            self.vk.messages.send(
-                user_id=EKATERINA_ID,
-                message=backup_msg,
-                random_id=random.randint(1, 2 ** 31)
-            )
-            print(f"📩 Резервная копия отправлена Екатерине")
-        except Exception as e:
-            print(f"⚠️ Не удалось отправить резервную копию: {e}")
-
-    def get_current_time(self):
-        """Возвращает текущее время в формате ЧЧ:ММ"""
-        import datetime
-        now = datetime.datetime.now()
-        return now.strftime("%H:%M")
-
-    def send_profile_to_ekaterina(self, user_id, profile_data, action=""):
-        """Отправляет изменённый профиль Екатерине в ЛС"""
-        try:
-            stats = profile_data['stats']
-            modifiers = {
-                'stamina': self.get_modifier(stats['stamina']),
-                'strength': self.get_modifier(stats['strength']),
-                'agility': self.get_modifier(stats['agility']),
-                'charisma': self.get_modifier(stats['charisma']),
-                'intellect': self.get_modifier(stats['intellect'])
-            }
-            
-            active_skills = [self.clean_skill_name(s) for s in profile_data['skills']['active']]
-            passive_skills = [self.clean_skill_name(s) for s in profile_data['skills']['passive']]
-            
-            msg = f"📩 **Изменение профиля** {action}\n\n"
-            msg += f"📋 Имя: {profile_data['name']}\n"
-            msg += f"👤 Раса: {profile_data['race']}\n"
-            msg += f"⚙ Класс: {profile_data['class']}\n"
-            msg += f"💚 ХП: {profile_data['hp']}   🛡 Броня: {profile_data['armor']}   🗡 Атака: {profile_data['attack']}\n"
-            msg += f"🦴 Стойкость: {stats['stamina']} ({modifiers['stamina']})\n"
-            msg += f"✊ Сила: {stats['strength']} ({modifiers['strength']})\n"
-            msg += f"💅 Ловкость: {stats['agility']} ({modifiers['agility']})\n"
-            msg += f"💗 Харизма: {stats['charisma']} ({modifiers['charisma']})\n"
-            msg += f"🧠 Интеллект: {stats['intellect']} ({modifiers['intellect']})\n"
-            msg += f"\n📜 Навыки\n"
-            msg += f"⚔ Активные: {', '.join(active_skills)}\n"
-            msg += f"⚒ Пассивные: {', '.join(passive_skills)}"
-            
-            self.vk.messages.send(
-                user_id=EKATERINA_ID,
-                message=msg,
-                random_id=random.randint(1, 2 ** 31)
-            )
-            print(f"📩 Отправлено уведомление Екатерине")
-        except Exception as e:
-            print(f"⚠️ Не удалось отправить профиль Екатерине: {e}")
 
     def get_keyboard(self):
         keyboard = VkKeyboard(one_time=False, inline=False)
@@ -234,7 +157,8 @@ class VKBot:
             'class': 'Воин',
             'hp': self.calculate_hp(stamina),
             'armor': 0,
-            'attack': 10,
+            'attack': 0,
+            'weapon': {"name": "Кулаки", "damage": "d4"},
             'stats': {
                 'stamina': stamina,
                 'strength': 10,
@@ -249,7 +173,6 @@ class VKBot:
         }
         self.profiles[str(user_id)] = profile
         self.save_profiles()
-        self.send_profile_to_ekaterina(user_id, profile, "(создан)")
         return self.profiles[str(user_id)]
 
     def get_profile(self, user_id):
@@ -304,10 +227,13 @@ class VKBot:
         active_skills = [self.clean_skill_name(s) for s in profile['skills']['active']]
         passive_skills = [self.clean_skill_name(s) for s in profile['skills']['passive']]
         
+        weapon = profile.get('weapon', {"name": "Кулаки", "damage": "d4"})
+        
         msg = f"📋 Имя: {profile['name']}\n"
         msg += f"👤 Раса: {profile['race']}\n"
         msg += f"⚙ Класс: {profile['class']}\n"
         msg += f"💚 ХП: {profile['hp']}   🛡 Броня: {profile['armor']}   🗡 Атака: {profile['attack']}\n"
+        msg += f"⚔️ Оружие: {weapon['name']} ({weapon['damage']})\n"
         msg += f"🦴 Стойкость: {stats['stamina']} ({modifiers['stamina']})\n"
         msg += f"✊ Сила: {stats['strength']} ({modifiers['strength']})\n"
         msg += f"💅 Ловкость: {stats['agility']} ({modifiers['agility']})\n"
@@ -333,6 +259,7 @@ class VKBot:
             'hp': None,
             'armor': None,
             'attack': None,
+            'weapon': {"name": "Кулаки", "damage": "d4"},
             'stats': {
                 'stamina': None,
                 'strength': None,
@@ -359,6 +286,7 @@ class VKBot:
             'hp': r'(?:ХП|хп)[:\-]?\s*(\d+)',
             'armor': r'(?:Броня|броня)[:\-]?\s*(\d+)',
             'attack': r'(?:Атака|атака)[:\-]?\s*(\d+)',
+            'weapon': r'(?:Оружие|оружие)[:\-]?\s*([^\n]+)',
             'stamina': r'(?:Стойкость|стойкость)[:\-]?\s*(\d+)',
             'strength': r'(?:Сила|сила)[:\-]?\s*(\d+)',
             'agility': r'(?:Ловкость|ловкость)[:\-]?\s*(\d+)',
@@ -393,6 +321,13 @@ class VKBot:
                         profile_data['attack'] = int(value)
                     except:
                         pass
+                elif key == 'weapon':
+                    weapon_match = re.search(r'([^\d]+)\s*(d\d+)', value)
+                    if weapon_match:
+                        profile_data['weapon'] = {
+                            'name': weapon_match.group(1).strip(),
+                            'damage': weapon_match.group(2).strip()
+                        }
                 elif key == 'stamina':
                     try:
                         profile_data['stats']['stamina'] = int(value)
@@ -442,6 +377,8 @@ class VKBot:
             profile['armor'] = profile_data['armor']
         if profile_data['attack'] is not None:
             profile['attack'] = profile_data['attack']
+        if profile_data['weapon']:
+            profile['weapon'] = profile_data['weapon']
         
         for stat, value in profile_data['stats'].items():
             if value is not None:
@@ -456,7 +393,6 @@ class VKBot:
         profile['hp'] = self.calculate_hp(stamina)
         
         self.save_profiles()
-        self.send_profile_to_ekaterina(user_id, profile, "(обновлён)")
         return profile
 
     def delete_profile(self, user_id):
@@ -523,7 +459,69 @@ class VKBot:
         
         command = parts[0].lower()
         
-        # ===== ИЗМЕНЕНИЕ БРОНИ: броня+5 Имя или броня-5 Имя =====
+        # ===== УДАЛЕНИЕ ПРОФИЛЯ: -профиль Имя =====
+        if command.startswith('-профиль'):
+            if len(parts) < 2:
+                self.send_message(peer_id, "❌ Укажите имя игрока. Формат: -профиль Имя", self.get_keyboard())
+                return True
+            
+            player_name = ' '.join(parts[1:])
+            target_id = self.find_user_by_name(player_name)
+            
+            if not target_id:
+                self.send_message(peer_id, f"❌ Игрок с именем '{player_name}' не найден.", self.get_keyboard())
+                return True
+            
+            if self.delete_profile(int(target_id)):
+                self.send_message(peer_id, f"🗑️ Профиль игрока '{player_name}' удален.", self.get_keyboard())
+            else:
+                self.send_message(peer_id, f"❌ Профиль игрока '{player_name}' не найден.", self.get_keyboard())
+            return True
+        
+        # ===== ДОБАВЛЕНИЕ ОРУЖИЯ: оружие+ Название d6 Имя =====
+        if command.startswith('оружие+'):
+            if len(parts) >= 3:
+                weapon_parts = ' '.join(parts[1:])
+                target_name = None
+                weapon_text = weapon_parts
+                
+                words = weapon_parts.split()
+                if len(words) >= 3:
+                    potential_name = words[-1]
+                    if self.find_user_by_name(potential_name):
+                        target_name = potential_name
+                        weapon_text = ' '.join(words[:-1])
+                
+                weapon_match = re.search(r'([^\d]+)\s*(d\d+)', weapon_text)
+                if weapon_match:
+                    weapon_name = weapon_match.group(1).strip()
+                    weapon_damage = weapon_match.group(2).strip()
+                    
+                    if target_name:
+                        target_id = self.find_user_by_name(target_name)
+                        if target_id:
+                            profile = self.get_or_create_profile(int(target_id))
+                            profile['weapon'] = {'name': weapon_name, 'damage': weapon_damage}
+                            self.save_profiles()
+                            self.send_message(peer_id, f"✅ {profile['name']}: оружие '{weapon_name} ({weapon_damage})' добавлено!", self.get_keyboard())
+                            return True
+                        else:
+                            self.send_message(peer_id, f"❌ Пользователь '{target_name}' не найден", self.get_keyboard())
+                            return True
+                    else:
+                        profile = self.get_or_create_profile(user_id)
+                        profile['weapon'] = {'name': weapon_name, 'damage': weapon_damage}
+                        self.save_profiles()
+                        self.send_message(peer_id, f"✅ Добавлено оружие '{weapon_name} ({weapon_damage})'", self.get_keyboard())
+                        return True
+                else:
+                    self.send_message(peer_id, "❌ Формат: оружие+ Название d6 Имя", self.get_keyboard())
+                    return True
+            else:
+                self.send_message(peer_id, "❌ Формат: оружие+ Название d6 Имя", self.get_keyboard())
+                return True
+        
+        # ===== ИЗМЕНЕНИЕ БРОНИ =====
         if command.startswith('броня'):
             change_str = command.replace('броня', '')
             try:
@@ -552,12 +550,7 @@ class VKBot:
                         old_value = profile['armor']
                         profile['armor'] = max(0, old_value + change)
                         self.save_profiles()
-                        self.send_profile_to_ekaterina(int(target_id), profile, f"(броня: {old_value} → {profile['armor']})")
-                        self.send_message(
-                            peer_id, 
-                            f"✅ {profile['name']}: Броня изменена с {old_value} на {profile['armor']}", 
-                            self.get_keyboard()
-                        )
+                        self.send_message(peer_id, f"✅ {profile['name']}: Броня изменена с {old_value} на {profile['armor']}", self.get_keyboard())
                         return True
                     else:
                         self.send_message(peer_id, f"❌ Пользователь '{target_name}' не найден", self.get_keyboard())
@@ -567,15 +560,10 @@ class VKBot:
                     old_value = profile['armor']
                     profile['armor'] = max(0, old_value + change)
                     self.save_profiles()
-                    self.send_profile_to_ekaterina(user_id, profile, f"(броня: {old_value} → {profile['armor']})")
-                    self.send_message(
-                        peer_id, 
-                        f"✅ Броня изменена с {old_value} на {profile['armor']}", 
-                        self.get_keyboard()
-                    )
+                    self.send_message(peer_id, f"✅ Броня изменена с {old_value} на {profile['armor']}", self.get_keyboard())
                     return True
         
-        # ===== ИЗМЕНЕНИЕ АТАКИ: атака+5 Имя или атака-5 Имя =====
+        # ===== ИЗМЕНЕНИЕ АТАКИ =====
         if command.startswith('атака'):
             change_str = command.replace('атака', '')
             try:
@@ -604,12 +592,7 @@ class VKBot:
                         old_value = profile['attack']
                         profile['attack'] = max(0, old_value + change)
                         self.save_profiles()
-                        self.send_profile_to_ekaterina(int(target_id), profile, f"(атака: {old_value} → {profile['attack']})")
-                        self.send_message(
-                            peer_id, 
-                            f"✅ {profile['name']}: Атака изменена с {old_value} на {profile['attack']}", 
-                            self.get_keyboard()
-                        )
+                        self.send_message(peer_id, f"✅ {profile['name']}: Атака изменена с {old_value} на {profile['attack']}", self.get_keyboard())
                         return True
                     else:
                         self.send_message(peer_id, f"❌ Пользователь '{target_name}' не найден", self.get_keyboard())
@@ -619,12 +602,7 @@ class VKBot:
                     old_value = profile['attack']
                     profile['attack'] = max(0, old_value + change)
                     self.save_profiles()
-                    self.send_profile_to_ekaterina(user_id, profile, f"(атака: {old_value} → {profile['attack']})")
-                    self.send_message(
-                        peer_id, 
-                        f"✅ Атака изменена с {old_value} на {profile['attack']}", 
-                        self.get_keyboard()
-                    )
+                    self.send_message(peer_id, f"✅ Атака изменена с {old_value} на {profile['attack']}", self.get_keyboard())
                     return True
         
         # ===== ИЗМЕНЕНИЕ ХАРАКТЕРИСТИК =====
@@ -658,34 +636,17 @@ class VKBot:
                             old_value = profile['hp']
                             profile['hp'] = max(1, old_value + change)
                             self.save_profiles()
-                            self.send_profile_to_ekaterina(int(target_id), profile, f"(ХП: {old_value} → {profile['hp']})")
-                            self.send_message(
-                                peer_id, 
-                                f"✅ {profile['name']}: ХП изменено с {old_value} на {profile['hp']}", 
-                                self.get_keyboard()
-                            )
+                            self.send_message(peer_id, f"✅ {profile['name']}: ХП изменено с {old_value} на {profile['hp']}", self.get_keyboard())
                             return True
                         else:
                             old_value = profile['stats'][stat_name]
                             profile['stats'][stat_name] = max(1, old_value + change)
                             if stat_name == 'stamina':
-                                old_hp = profile['hp']
                                 self.update_hp_from_stamina(profile)
-                                hp_msg = f", HP: {old_hp} → {profile['hp']}"
-                            else:
-                                hp_msg = ""
                             self.save_profiles()
                             new_modifier = self.get_modifier(profile['stats'][stat_name])
-                            self.send_profile_to_ekaterina(
-                                int(target_id), 
-                                profile, 
-                                f"({stat_name}: {old_value} → {profile['stats'][stat_name]}, мод: {new_modifier}){hp_msg}"
-                            )
-                            self.send_message(
-                                peer_id, 
-                                f"✅ {profile['name']}: {stat_name} изменена с {old_value} на {profile['stats'][stat_name]} (мод: {new_modifier}){hp_msg}", 
-                                self.get_keyboard()
-                            )
+                            hp_msg = f", HP: {profile['hp']}" if stat_name == 'stamina' else ""
+                            self.send_message(peer_id, f"✅ {profile['name']}: {stat_name} изменена с {old_value} на {profile['stats'][stat_name]} (мод: {new_modifier}){hp_msg}", self.get_keyboard())
                             return True
                     else:
                         self.send_message(peer_id, f"❌ Пользователь '{target_name}' не найден", self.get_keyboard())
@@ -696,36 +657,20 @@ class VKBot:
                         old_value = profile['hp']
                         profile['hp'] = max(1, old_value + change)
                         self.save_profiles()
-                        self.send_profile_to_ekaterina(user_id, profile, f"(ХП: {old_value} → {profile['hp']})")
-                        self.send_message(
-                            peer_id, 
-                            f"✅ ХП изменено с {old_value} на {profile['hp']}", 
-                            self.get_keyboard()
-                        )
+                        self.send_message(peer_id, f"✅ ХП изменено с {old_value} на {profile['hp']}", self.get_keyboard())
                         return True
                     else:
                         old_value = profile['stats'][stat_name]
                         profile['stats'][stat_name] = max(1, old_value + change)
                         if stat_name == 'stamina':
-                            old_hp = profile['hp']
                             self.update_hp_from_stamina(profile)
-                            hp_msg = f", HP: {old_hp} → {profile['hp']}"
-                        else:
-                            hp_msg = ""
                         self.save_profiles()
                         new_modifier = self.get_modifier(profile['stats'][stat_name])
-                        self.send_profile_to_ekaterina(
-                            user_id, 
-                            profile, 
-                            f"({stat_name}: {old_value} → {profile['stats'][stat_name]}, мод: {new_modifier}){hp_msg}"
-                        )
-                        self.send_message(
-                            peer_id, 
-                            f"✅ {stat_name} изменена с {old_value} на {profile['stats'][stat_name]} (мод: {new_modifier}){hp_msg}", 
-                            self.get_keyboard()
-                        )
+                        hp_msg = f", HP: {profile['hp']}" if stat_name == 'stamina' else ""
+                        self.send_message(peer_id, f"✅ {stat_name} изменена с {old_value} на {profile['stats'][stat_name]} (мод: {new_modifier}){hp_msg}", self.get_keyboard())
                         return True
         
+        # ===== НАВЫКИ =====
         if command == 'активка':
             if len(parts) > 1:
                 full_text = ' '.join(parts[1:])
@@ -751,7 +696,6 @@ class VKBot:
                         if clean_skill not in profile['skills']['active']:
                             profile['skills']['active'].append(clean_skill)
                             self.save_profiles()
-                            self.send_profile_to_ekaterina(int(target_id), profile, f"(активный навык: +{clean_skill})")
                             self.send_message(peer_id, f"✅ {profile['name']}: добавлен активный навык '{clean_skill}'", self.get_keyboard())
                             return True
                         else:
@@ -763,7 +707,6 @@ class VKBot:
                     if clean_skill not in profile['skills']['active']:
                         profile['skills']['active'].append(clean_skill)
                         self.save_profiles()
-                        self.send_profile_to_ekaterina(user_id, profile, f"(активный навык: +{clean_skill})")
                         self.send_message(peer_id, f"✅ Добавлен активный навык '{clean_skill}'", self.get_keyboard())
                         return True
                     else:
@@ -796,7 +739,6 @@ class VKBot:
                         if clean_skill not in profile['skills']['passive']:
                             profile['skills']['passive'].append(clean_skill)
                             self.save_profiles()
-                            self.send_profile_to_ekaterina(int(target_id), profile, f"(пассивный навык: +{clean_skill})")
                             self.send_message(peer_id, f"✅ {profile['name']}: добавлен пассивный навык '{clean_skill}'", self.get_keyboard())
                             return True
                         else:
@@ -808,7 +750,6 @@ class VKBot:
                     if clean_skill not in profile['skills']['passive']:
                         profile['skills']['passive'].append(clean_skill)
                         self.save_profiles()
-                        self.send_profile_to_ekaterina(user_id, profile, f"(пассивный навык: +{clean_skill})")
                         self.send_message(peer_id, f"✅ Добавлен пассивный навык '{clean_skill}'", self.get_keyboard())
                         return True
                     else:
@@ -816,6 +757,7 @@ class VKBot:
                         return True
             return False
         
+        # ===== РАСА И КЛАСС =====
         if command == 'раса' and len(parts) > 1:
             race_name = ' '.join(parts[1:])
             target_name = None
@@ -832,7 +774,6 @@ class VKBot:
                     old_race = profile['race']
                     profile['race'] = race_name
                     self.save_profiles()
-                    self.send_profile_to_ekaterina(int(target_id), profile, f"(раса: {old_race} → {race_name})")
                     self.send_message(peer_id, f"✅ {profile['name']}: раса изменена с '{old_race}' на '{race_name}'", self.get_keyboard())
                     return True
             else:
@@ -840,7 +781,6 @@ class VKBot:
                 old_race = profile['race']
                 profile['race'] = race_name
                 self.save_profiles()
-                self.send_profile_to_ekaterina(user_id, profile, f"(раса: {old_race} → {race_name})")
                 self.send_message(peer_id, f"✅ Раса изменена с '{old_race}' на '{race_name}'", self.get_keyboard())
                 return True
             return False
@@ -861,7 +801,6 @@ class VKBot:
                     old_class = profile['class']
                     profile['class'] = class_name
                     self.save_profiles()
-                    self.send_profile_to_ekaterina(int(target_id), profile, f"(класс: {old_class} → {class_name})")
                     self.send_message(peer_id, f"✅ {profile['name']}: класс изменен с '{old_class}' на '{class_name}'", self.get_keyboard())
                     return True
             else:
@@ -869,7 +808,6 @@ class VKBot:
                 old_class = profile['class']
                 profile['class'] = class_name
                 self.save_profiles()
-                self.send_profile_to_ekaterina(user_id, profile, f"(класс: {old_class} → {class_name})")
                 self.send_message(peer_id, f"✅ Класс изменен с '{old_class}' на '{class_name}'", self.get_keyboard())
                 return True
             return False
@@ -891,26 +829,29 @@ class VKBot:
         clean_text = self.clean_text(text)
         is_admin = user_id in ADMIN_IDS
 
-        is_forward = False
-        forwarded_text = ""
-        forwarded_user_id = None
-        
-        if 'fwd' in message_data and message_data['fwd']:
-            is_forward = True
-            for fwd in message_data['fwd']:
-                if 'text' in fwd and fwd['text']:
-                    forwarded_text = fwd['text']
-                if 'from_id' in fwd:
-                    forwarded_user_id = fwd['from_id']
-                break
+        # ===== КОМАНДА -ПРОФИЛЬ (для админов) =====
+        if text.startswith('-профиль'):
+            if not is_admin:
+                self.send_message(peer_id, "❌ Эта команда доступна только администраторам.", self.get_keyboard())
+                return
             
-            if is_admin and forwarded_text and forwarded_user_id:
-                self.last_forwarded[user_id] = {
-                    'text': forwarded_text,
-                    'user_id': forwarded_user_id,
-                    'peer_id': peer_id
-                }
-                print(f"📎 Сохранено пересланное сообщение от {user_id} для игрока {forwarded_user_id}")
+            parts = text.split()
+            if len(parts) < 2:
+                self.send_message(peer_id, "❌ Укажите имя игрока. Формат: -профиль Имя", self.get_keyboard())
+                return
+            
+            player_name = ' '.join(parts[1:])
+            target_id = self.find_user_by_name(player_name)
+            
+            if not target_id:
+                self.send_message(peer_id, f"❌ Игрок с именем '{player_name}' не найден.", self.get_keyboard())
+                return
+            
+            if self.delete_profile(int(target_id)):
+                self.send_message(peer_id, f"🗑️ Профиль игрока '{player_name}' удален.", self.get_keyboard())
+            else:
+                self.send_message(peer_id, f"❌ Профиль игрока '{player_name}' не найден.", self.get_keyboard())
+            return
 
         # ===== ПОКАЗАТЬ ПРОФИЛЬ ИГРОКА =====
         if text.startswith('покажи профиль'):
@@ -961,14 +902,18 @@ class VKBot:
                 return
             help_msg = (
                 "🎲 **Список команд для админов:**\n\n"
-                "**Просмотр профилей:**\n"
+                "**Просмотр и удаление профилей:**\n"
                 "• покажи профиль Имя - показать профиль игрока\n"
+                "• -профиль Имя - удалить профиль игрока\n"
                 "• /игроки - список всех игроков\n"
                 "• /проф (с пересылкой) - показать профиль игрока по пересылке\n\n"
                 "**Управление профилями:**\n"
-                "• +проф (с пересылкой) - обновить свой профиль\n"
-                "• игрок+ (с пересылкой) - создать/обновить профиль игрока\n"
-                "• игрок- Имя - удалить профиль игрока\n\n"
+                "• +проф (с текстом) - обновить свой профиль из текста\n"
+                "• +профиль (с текстом) - обновить свой профиль из текста\n"
+                "• игрок+ (с пересылкой) - создать/обновить профиль игрока\n\n"
+                "**Оружие:**\n"
+                "• оружие+ Меч d6 - добавить оружие себе\n"
+                "• оружие+ Меч d6 Екатерина - добавить оружие Екатерине\n\n"
                 "**Изменение характеристик (+ и -):**\n"
                 "• ст+5 Имя / ст-5 Имя - Стойкость\n"
                 "• си+3 Имя / си-3 Имя - Сила\n"
@@ -1055,33 +1000,19 @@ class VKBot:
                 self.send_message(peer_id, "❌ Перешлите сообщение игрока с профилем вместе с командой 'игрок+'.", self.get_keyboard())
                 return
 
-        # игрок-
-        if text.lower().startswith('игрок-') and is_admin:
-            parts = text.split()
-            if len(parts) < 2:
-                self.send_message(peer_id, "❌ Укажите имя игрока. Формат: игрок- Имя", self.get_keyboard())
-                return
-            
-            player_name = ' '.join(parts[1:])
-            target_id = self.find_user_by_name(player_name)
-            
-            if not target_id:
-                self.send_message(peer_id, f"❌ Игрок с именем '{player_name}' не найден.", self.get_keyboard())
-                return
-            
-            if self.delete_profile(int(target_id)):
-                self.send_message(peer_id, f"✅ Профиль игрока '{player_name}' удален.", self.get_keyboard())
-            else:
-                self.send_message(peer_id, f"❌ Профиль игрока '{player_name}' не найден.", self.get_keyboard())
-            return
-
-        # +проф / +профиль
+        # +проф / +профиль - обновление из текста
         if text.startswith('+проф') or text.startswith('+профиль'):
             print(f"🔍 Обработка команды: {text[:50]}...")
             
-            if is_forward and forwarded_text:
-                print(f"📎 Обновление профиля из пересланного сообщения")
-                parsed_data = self.parse_profile_from_text(forwarded_text)
+            # Убираем команду из текста
+            if text.startswith('+проф'):
+                text_after = text[5:].strip()
+            else:
+                text_after = text[8:].strip()
+            
+            if text_after:
+                print(f"📝 Обновление профиля из текста")
+                parsed_data = self.parse_profile_from_text(text_after)
                 
                 has_data = False
                 for key, value in parsed_data.items():
@@ -1101,42 +1032,11 @@ class VKBot:
                 if has_data:
                     profile = self.update_profile_from_data(user_id, parsed_data)
                     profile_text = self.format_profile(user_id)
-                    self.send_message(peer_id, f"✅ Профиль обновлен из пересланного сообщения!\n\n{profile_text}", self.get_keyboard())
+                    self.send_message(peer_id, f"✅ Профиль обновлен!\n\n{profile_text}", self.get_keyboard())
                 else:
-                    self.send_message(peer_id, "❌ Не удалось распознать данные профиля из пересланного сообщения.", self.get_keyboard())
-                return
-            
-            if user_id in self.last_forwarded:
-                forwarded_data = self.last_forwarded[user_id]
-                forwarded_text = forwarded_data['text']
-                print(f"📎 Используем сохранённое пересланное сообщение")
-                
-                parsed_data = self.parse_profile_from_text(forwarded_text)
-                
-                has_data = False
-                for key, value in parsed_data.items():
-                    if key == 'stats':
-                        for stat, val in value.items():
-                            if val is not None:
-                                has_data = True
-                                break
-                    elif key == 'skills':
-                        if value['active'] or value['passive']:
-                            has_data = True
-                    elif value is not None:
-                        has_data = True
-                    if has_data:
-                        break
-                
-                if has_data:
-                    profile = self.update_profile_from_data(user_id, parsed_data)
-                    profile_text = self.format_profile(user_id)
-                    self.send_message(peer_id, f"✅ Профиль обновлен из сохранённого пересланного сообщения!\n\n{profile_text}", self.get_keyboard())
-                else:
-                    self.send_message(peer_id, "❌ Не удалось распознать данные профиля из сохранённого сообщения.", self.get_keyboard())
-                return
-            
-            self.send_message(peer_id, "❌ Перешлите сообщение с профилем вместе с командой +проф (одним сообщением).", self.get_keyboard())
+                    self.send_message(peer_id, "❌ Не удалось распознать данные профиля. Убедитесь, что текст содержит поля: Имя, Раса, Класс, Стойкость и т.д.", self.get_keyboard())
+            else:
+                self.send_message(peer_id, "❌ Введите данные профиля после команды. Пример:\n+проф\nИмя: Енот\nРаса: Человек\nКласс: Танк\nСтойкость: 20\n...", self.get_keyboard())
             return
 
         # Мой профиль
@@ -1200,8 +1100,9 @@ class VKBot:
         print("👤 Для всех: кнопка 'Мой профиль'")
         print("🔧 Команды админов в списке 'Команда'")
         print("🔄 + и - для изменения характеристик")
-        print("📋 покажи профиль Имя - посмотреть профиль игрока")
-        print("📩 Резервные копии всех профилей отправляются в ЛС Екатерине")
+        print("📋 +проф - обновить профиль из текста")
+        print("🗑️ -профиль Имя - удалить профиль игрока")
+        print("⚔️ оружие+ Меч d6 - добавить оружие")
         print("💾 Профили сохраняются в profiles.json")
         print("=" * 50)
 
