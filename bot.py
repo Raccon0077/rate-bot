@@ -6,6 +6,7 @@ import re
 import json
 import os
 import math
+import datetime
 
 # Токен группы ВК
 VK_TOKEN = "vk1.a.pWAMTUhJkodcMkUFpCa-UMg_6DKXwr6ISV863itpGw410z1RVSyawnce0r8wMMho0eD5rtIVnrITM22tQbnuqGtnJBZfH5FLopBeT33UG0AUbJI_cEJVbcJEAvOs34dt3PfAA0yiL0sjgabDA88ll9GRCB2nyxiywcI5286nSS-Db2Rn5AAzgp3nkzXfWzkLc4Xf-_vPgUu7pMVJc490Vw"
@@ -21,7 +22,7 @@ ADMIN_IDS = [EKATERINA_ID, VELES_ID]
 # Файл для хранения профилей
 PROFILES_FILE = "profiles.json"
 
-# ===== НОВЫЕ СТИХИИ ДЛЯ РАС =====
+# Стихии для рас
 ELEMENTS = {
     "человек": "☀️ Свет",
     "эльф": "💨 Ветер",
@@ -38,10 +39,6 @@ ELEMENTS = {
     "вампир": "🌑 Тьма",
     "оборотень": "🌍 Земля",
     "некромант": "💀 Смерть",
-    "элементаль огня": "🔥 Огонь",
-    "элементаль воды": "🌊 Вода",
-    "элементаль земли": "🌍 Земля",
-    "элементаль воздуха": "💨 Ветер",
     "хаотит": "🌪️ Хаос",
     "кошмар": "🌑 Тьма",
     "инфернальный": "🔥 Огонь",
@@ -106,13 +103,17 @@ class VKBot:
         print(f"👑 Админы: Екатерина (ID: {EKATERINA_ID}), Велес (ID: {VELES_ID})")
         print(f"📋 Загружено профилей: {len(self.profiles)}")
         print(f"🌍 Добавлены новые расы и стихии!")
+        print(f"📦 Команда /бекап - восстановить профили из JSON")
 
     def get_element(self, race):
-        """Возвращает стихию для расы"""
         if not race:
             return "❓ Неизвестно"
         race_lower = race.lower().strip()
         return ELEMENTS.get(race_lower, "❓ Неизвестно")
+
+    def get_current_time(self):
+        now = datetime.datetime.now()
+        return now.strftime("%H:%M")
 
     def _init_profiles(self):
         profiles = {
@@ -198,6 +199,49 @@ class VKBot:
         except Exception as e:
             print(f"❌ Ошибка сохранения: {e}")
             return False
+
+    def restore_from_backup(self, backup_data):
+        """Восстанавливает профили из JSON"""
+        try:
+            if isinstance(backup_data, str):
+                backup_data = json.loads(backup_data)
+            
+            if not isinstance(backup_data, dict):
+                return False, "Неверный формат данных"
+            
+            count = 0
+            for user_id, profile_data in backup_data.items():
+                # Проверяем обязательные поля
+                if 'name' not in profile_data:
+                    continue
+                
+                # Обновляем или создаём профиль
+                self.profiles[str(user_id)] = {
+                    'name': profile_data.get('name', 'Без имени'),
+                    'race': profile_data.get('race', 'Человек'),
+                    'class': profile_data.get('class', 'Воин'),
+                    'hp': profile_data.get('hp', 100),
+                    'armor': profile_data.get('armor', 0),
+                    'attack': profile_data.get('attack', 0),
+                    'weapon': profile_data.get('weapon', {"name": "Кулаки", "damage": "d4"}),
+                    'stats': {
+                        'stamina': profile_data.get('stats', {}).get('stamina', 10),
+                        'strength': profile_data.get('stats', {}).get('strength', 10),
+                        'agility': profile_data.get('stats', {}).get('agility', 10),
+                        'charisma': profile_data.get('stats', {}).get('charisma', 10),
+                        'intellect': profile_data.get('stats', {}).get('intellect', 10)
+                    },
+                    'skills': {
+                        'active': profile_data.get('skills', {}).get('active', ['Рывок']),
+                        'passive': profile_data.get('skills', {}).get('passive', ['Уклонение'])
+                    }
+                }
+                count += 1
+            
+            self.save_profiles()
+            return True, f"Восстановлено {count} профилей"
+        except Exception as e:
+            return False, f"Ошибка: {e}"
 
     def get_keyboard(self):
         keyboard = VkKeyboard(one_time=False, inline=False)
@@ -926,6 +970,51 @@ class VKBot:
                 }
                 print(f"📎 Сохранено пересланное сообщение от {user_id} для игрока {forwarded_user_id}")
 
+        # ===== КОМАНДА /БЕКАП - ВОССТАНОВЛЕНИЕ ПРОФИЛЕЙ (только для Екатерины) =====
+        if clean_text.startswith('/бекап'):
+            if user_id != EKATERINA_ID:
+                self.send_message(peer_id, "❌ Эта команда доступна только Екатерине.", self.get_keyboard())
+                return
+            
+            # Убираем команду из текста
+            text_after = text[6:].strip()  # убираем "/бекап"
+            
+            if not text_after:
+                self.send_message(peer_id, "❌ Отправьте JSON с профилями после команды.\nПример:\n/бекап\n{\n  \"212887447\": {\n    \"name\": \"Деркитус\",\n    ...\n  }\n}", self.get_keyboard())
+                return
+            
+            # Парсим JSON
+            try:
+                # Пробуем найти JSON в тексте
+                json_match = re.search(r'\{[\s\S]*\}', text_after)
+                if json_match:
+                    json_data = json_match.group(0)
+                    backup_data = json.loads(json_data)
+                else:
+                    backup_data = json.loads(text_after)
+                
+                success, message = self.restore_from_backup(backup_data)
+                if success:
+                    # Формируем ответ с подтверждением
+                    msg = f"✅ **Профили восстановлены!**\n\n"
+                    msg += f"📦 Восстановлено профилей: {len(backup_data)}\n"
+                    msg += f"🕐 Время: {self.get_current_time()}\n\n"
+                    
+                    # Показываем список восстановленных игроков
+                    names = []
+                    for user_id, data in backup_data.items():
+                        names.append(data.get('name', user_id))
+                    msg += f"👤 Игроки: {', '.join(names)}"
+                    
+                    self.send_message(peer_id, msg, self.get_keyboard())
+                else:
+                    self.send_message(peer_id, f"❌ {message}", self.get_keyboard())
+            except json.JSONDecodeError as e:
+                self.send_message(peer_id, f"❌ Ошибка парсинга JSON: {e}\n\nУбедитесь, что формат правильный.", self.get_keyboard())
+            except Exception as e:
+                self.send_message(peer_id, f"❌ Ошибка: {e}", self.get_keyboard())
+            return
+
         # ===== КОМАНДА -ПРОФИЛЬ (для админов) =====
         if text.startswith('-профиль'):
             if not is_admin:
@@ -1004,6 +1093,8 @@ class VKBot:
                 "• -профиль Имя - удалить профиль игрока\n"
                 "• /игроки - список всех игроков\n"
                 "• /проф (с пересылкой) - показать профиль игрока по пересылке\n\n"
+                "**Восстановление (только Екатерина):**\n"
+                "• /бекап - восстановить все профили из JSON\n\n"
                 "**Управление профилями:**\n"
                 "• +проф (с текстом) - обновить свой профиль из текста\n"
                 "• +профиль (с текстом) - обновить свой профиль из текста\n"
@@ -1195,11 +1286,8 @@ class VKBot:
         print("📊 Модификаторы округляются в большую сторону (потолок)")
         print("👤 Для всех: кнопка 'Мой профиль'")
         print("🌍 Добавлены стихии для рас!")
+        print("📦 /бекап - восстановить профили из JSON (только Екатерина)")
         print("🔧 Команды админов в списке 'Команда'")
-        print("🔄 + и - для изменения характеристик")
-        print("📋 +проф - обновить профиль из текста")
-        print("🗑️ -профиль Имя - удалить профиль игрока")
-        print("⚔️ оружие+ Меч d6 - добавить оружие")
         print("💾 Профили сохраняются в profiles.json")
         print("=" * 50)
 
